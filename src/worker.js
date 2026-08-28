@@ -1,9 +1,10 @@
 const BYBIT = "https://api.bybit.com";
-const VERSION = "GLOBAL-PULSE-CRYPTO-DEEP-V1";
+const VERSION = "GLOBAL-PULSE-CRYPTO-DEEP-V2";
 
 const KLINE_LIMIT = 200;
 const TRADE_LIMIT = 1000;
 const ORDERBOOK_LIMIT = 50;
+const LIVE_CHART_LIMIT = 120;
 
 const BLOCKED = [
   "iran",
@@ -78,8 +79,9 @@ function pct(a, b) {
 }
 
 function round(v, d = 2) {
+  const n = num(v);
   const p = Math.pow(10, d);
-  return Math.round(v * p) / p;
+  return Math.round(n * p) / p;
 }
 
 function formatPrice(v) {
@@ -102,6 +104,14 @@ function formatPrice(v) {
   return n.toLocaleString("en-US", {
     maximumFractionDigits: 8
   });
+}
+
+function htmlEscape(v) {
+  return String(v ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 /* =========================================================
@@ -153,15 +163,6 @@ async function bybit(path, params = {}) {
 
 /* =========================================================
    FIND SYMBOL
-   ROBUST VERSION
-   Futures first → Spot
-   Supports:
-   BTC
-   BTCUSDT
-   ETH
-   ETHUSDT
-   PEPE
-   PEPEUSDT
 ========================================================= */
 
 async function findSymbol(input) {
@@ -183,10 +184,6 @@ async function findSymbol(input) {
   if (!symbol.endsWith("USDT")) {
     symbol = `${symbol}USDT`;
   }
-
-  /* =======================================================
-     SEARCH CATEGORY
-  ======================================================= */
 
   async function searchCategory(category) {
 
@@ -223,13 +220,6 @@ async function findSymbol(input) {
           ? result.list
           : [];
 
-      /* ---------------------------------------------------
-         EXACT SYMBOL
-         BTCUSDT
-         ETHUSDT
-         PEPEUSDT
-      --------------------------------------------------- */
-
       let item =
         list.find(x =>
           upper(x.symbol) === symbol
@@ -238,13 +228,6 @@ async function findSymbol(input) {
       if (item) {
         return item;
       }
-
-      /* ---------------------------------------------------
-         BASE COIN
-         BTC → BTCUSDT
-         ETH → ETHUSDT
-         PEPE → PEPEUSDT
-      --------------------------------------------------- */
 
       if (!raw.endsWith("USDT")) {
 
@@ -259,10 +242,6 @@ async function findSymbol(input) {
         }
       }
 
-      /* ---------------------------------------------------
-         NEXT PAGE
-      --------------------------------------------------- */
-
       cursor =
         result?.nextPageCursor || "";
 
@@ -274,9 +253,7 @@ async function findSymbol(input) {
     return null;
   }
 
-  /* =======================================================
-     1. FUTURES
-  ======================================================= */
+  /* Futures first */
 
   const futuresItem =
     await searchCategory("linear");
@@ -285,31 +262,17 @@ async function findSymbol(input) {
 
     return {
       found: true,
-
       category: "linear",
-
       market: "Futures",
-
-      symbol:
-        futuresItem.symbol,
-
-      baseCoin:
-        futuresItem.baseCoin || "",
-
-      quoteCoin:
-        futuresItem.quoteCoin || "",
-
-      contractType:
-        futuresItem.contractType || "",
-
-      raw:
-        futuresItem
+      symbol: futuresItem.symbol,
+      baseCoin: futuresItem.baseCoin || "",
+      quoteCoin: futuresItem.quoteCoin || "",
+      contractType: futuresItem.contractType || "",
+      raw: futuresItem
     };
   }
 
-  /* =======================================================
-     2. SPOT
-  ======================================================= */
+  /* Spot */
 
   const spotItem =
     await searchCategory("spot");
@@ -318,30 +281,15 @@ async function findSymbol(input) {
 
     return {
       found: true,
-
       category: "spot",
-
       market: "Spot",
-
-      symbol:
-        spotItem.symbol,
-
-      baseCoin:
-        spotItem.baseCoin || "",
-
-      quoteCoin:
-        spotItem.quoteCoin || "",
-
+      symbol: spotItem.symbol,
+      baseCoin: spotItem.baseCoin || "",
+      quoteCoin: spotItem.quoteCoin || "",
       contractType: "",
-
-      raw:
-        spotItem
+      raw: spotItem
     };
   }
-
-  /* =======================================================
-     NOT FOUND
-  ======================================================= */
 
   return {
     found: false,
@@ -371,7 +319,8 @@ function parseKlines(list) {
 async function getKlines(
   category,
   symbol,
-  interval
+  interval,
+  limit = KLINE_LIMIT
 ) {
 
   const result =
@@ -381,11 +330,49 @@ async function getKlines(
         category,
         symbol,
         interval,
-        limit: KLINE_LIMIT
+        limit
       }
     );
 
   return parseKlines(result.list);
+}
+
+/* =========================================================
+   LIVE CHART DATA
+========================================================= */
+
+async function getLiveChartData(
+  category,
+  symbol,
+  interval = "1",
+  limit = LIVE_CHART_LIMIT
+) {
+
+  const safeLimit =
+    Math.max(
+      20,
+      Math.min(
+        1000,
+        num(limit, LIVE_CHART_LIMIT)
+      )
+    );
+
+  const candles =
+    await getKlines(
+      category,
+      symbol,
+      interval,
+      safeLimit
+    );
+
+  return candles.map(c => ({
+    time: c.time,
+    open: c.open,
+    high: c.high,
+    low: c.low,
+    close: c.close,
+    volume: c.volume
+  }));
 }
 
 /* =========================================================
@@ -590,13 +577,8 @@ function bollinger(values, period = 20) {
 
   return {
     middle: mean,
-
-    upper:
-      mean + sd * 2,
-
-    lower:
-      mean - sd * 2,
-
+    upper: mean + sd * 2,
+    lower: mean - sd * 2,
     width:
       mean
         ? ((sd * 4) / mean) * 100
@@ -641,9 +623,7 @@ function trendAnalysis(candles) {
       ma20 > ma50
     ) {
 
-      direction =
-        "BULLISH";
-
+      direction = "BULLISH";
       score = 80;
 
     } else if (
@@ -651,27 +631,21 @@ function trendAnalysis(candles) {
       ma20 < ma50
     ) {
 
-      direction =
-        "BEARISH";
-
+      direction = "BEARISH";
       score = 20;
 
     } else if (
       price > ma20
     ) {
 
-      direction =
-        "BULLISH";
-
+      direction = "BULLISH";
       score = 65;
 
     } else if (
       price < ma20
     ) {
 
-      direction =
-        "BEARISH";
-
+      direction = "BEARISH";
       score = 35;
     }
   }
@@ -768,12 +742,8 @@ function supportResistance(candles) {
       )
       .sort(
         (a, b) =>
-          Math.abs(
-            price - a.price
-          ) -
-          Math.abs(
-            price - b.price
-          )
+          Math.abs(price - a.price) -
+          Math.abs(price - b.price)
       )
       .slice(0, 5);
 
@@ -789,12 +759,8 @@ function supportResistance(candles) {
       )
       .sort(
         (a, b) =>
-          Math.abs(
-            price - a.price
-          ) -
-          Math.abs(
-            price - b.price
-          )
+          Math.abs(price - a.price) -
+          Math.abs(price - b.price)
       )
       .slice(0, 5);
 
@@ -853,15 +819,10 @@ function liquidityHunt(candles) {
 
     return {
       detected: true,
-
-      type:
-        "BULLISH LIQUIDITY SWEEP",
-
+      type: "BULLISH LIQUIDITY SWEEP",
       reason:
         "Price swept the previous low and closed back above it.",
-
-      level:
-        previousLow
+      level: previousLow
     };
   }
 
@@ -869,23 +830,16 @@ function liquidityHunt(candles) {
 
     return {
       detected: true,
-
-      type:
-        "BEARISH LIQUIDITY SWEEP",
-
+      type: "BEARISH LIQUIDITY SWEEP",
       reason:
         "Price swept the previous high and closed back below it.",
-
-      level:
-        previousHigh
+      level: previousHigh
     };
   }
 
   return {
     detected: false,
-
     type: "NONE",
-
     reason:
       "No confirmed liquidity sweep in the sampled candles."
   };
@@ -1022,23 +976,16 @@ async function footprint(
   }
 
   return {
-    trades:
-      trades.length,
-
+    trades: trades.length,
     buyVolume,
     sellVolume,
-
     buyNotional,
     sellNotional,
-
     delta,
     deltaPercent,
-
     largeBuy,
     largeSell,
-
     largeThreshold,
-
     pressure
   };
 }
@@ -1126,12 +1073,8 @@ async function orderBook(
   const buyWalls =
     bids
       .map(x => ({
-        price:
-          num(x[0]),
-
-        quantity:
-          num(x[1]),
-
+        price: num(x[0]),
+        quantity: num(x[1]),
         value:
           num(x[0]) *
           num(x[1])
@@ -1146,12 +1089,8 @@ async function orderBook(
   const sellWalls =
     asks
       .map(x => ({
-        price:
-          num(x[0]),
-
-        quantity:
-          num(x[1]),
-
+        price: num(x[0]),
+        quantity: num(x[1]),
         value:
           num(x[0]) *
           num(x[1])
@@ -1290,12 +1229,9 @@ function styleAnalysis(data) {
 
   const styles = [];
 
-  /* =======================================================
-     SCALPING
-  ======================================================= */
+  /* SCALPING */
 
   let scalpScore = 50;
-
   const scalpReasons = [];
 
   if (
@@ -1348,8 +1284,7 @@ function styleAnalysis(data) {
 
   styles.push({
 
-    name:
-      "Scalping",
+    name: "Scalping",
 
     score:
       Math.max(
@@ -1371,12 +1306,9 @@ function styleAnalysis(data) {
       scalpReasons
   });
 
-  /* =======================================================
-     DAY TRADING
-  ======================================================= */
+  /* DAY */
 
   let dayScore = 50;
-
   const dayReasons = [];
 
   if (
@@ -1426,8 +1358,7 @@ function styleAnalysis(data) {
 
   styles.push({
 
-    name:
-      "Day Trading",
+    name: "Day Trading",
 
     score:
       Math.max(
@@ -1449,9 +1380,7 @@ function styleAnalysis(data) {
       dayReasons
   });
 
-  /* =======================================================
-     SWING
-  ======================================================= */
+  /* SWING */
 
   let swingScore =
     trend.score;
@@ -1488,8 +1417,7 @@ function styleAnalysis(data) {
 
   styles.push({
 
-    name:
-      "Swing Trading",
+    name: "Swing Trading",
 
     score:
       Math.max(
@@ -1511,12 +1439,9 @@ function styleAnalysis(data) {
       swingReasons
   });
 
-  /* =======================================================
-     MOMENTUM
-  ======================================================= */
+  /* MOMENTUM */
 
   let momentum = 50;
-
   const momentumReasons = [];
 
   if (
@@ -1565,8 +1490,7 @@ function styleAnalysis(data) {
 
   styles.push({
 
-    name:
-      "Momentum",
+    name: "Momentum",
 
     score:
       Math.max(
@@ -1588,12 +1512,9 @@ function styleAnalysis(data) {
       momentumReasons
   });
 
-  /* =======================================================
-     SMART MONEY
-  ======================================================= */
+  /* SMART MONEY */
 
   let sm = 50;
-
   const smReasons = [];
 
   if (
@@ -1659,8 +1580,7 @@ function styleAnalysis(data) {
 
   styles.push({
 
-    name:
-      "Smart Money",
+    name: "Smart Money",
 
     score:
       Math.max(
@@ -1764,11 +1684,6 @@ async function analyzeSymbol(input) {
       x => x.close
     );
 
-  const close15m =
-    candles15m.map(
-      x => x.close
-    );
-
   const trend1m =
     trendAnalysis(
       candles1m
@@ -1855,10 +1770,6 @@ async function analyzeSymbol(input) {
 
   const confirmations = [];
 
-  /* =======================================================
-     1M + 15M
-  ======================================================= */
-
   if (
     trend1m.direction ===
     trend15m.direction
@@ -1875,20 +1786,12 @@ async function analyzeSymbol(input) {
     );
   }
 
-  /* =======================================================
-     1H
-  ======================================================= */
-
   if (trend1h) {
 
     confirmations.push(
       `1h trend: ${trend1h.direction}`
     );
   }
-
-  /* =======================================================
-     FOOTPRINT
-  ======================================================= */
 
   if (
     footprintData.pressure ===
@@ -1910,10 +1813,6 @@ async function analyzeSymbol(input) {
     );
   }
 
-  /* =======================================================
-     ORDER BOOK
-  ======================================================= */
-
   if (
     orderBookData.pressure ===
     "BUY PRESSURE"
@@ -1934,20 +1833,12 @@ async function analyzeSymbol(input) {
     );
   }
 
-  /* =======================================================
-     HUNT
-  ======================================================= */
-
   if (hunt.detected) {
 
     confirmations.push(
       hunt.type
     );
   }
-
-  /* =======================================================
-     OVERALL
-  ======================================================= */
 
   let overall =
     avg(
@@ -2078,28 +1969,936 @@ async function analyzeSymbol(input) {
 }
 
 /* =========================================================
-   HTML HELPERS
+   CHART HTML
 ========================================================= */
 
-function htmlEscape(v) {
+function chartHtml(data) {
 
-  return String(v ?? "")
-    .replace(
-      /&/g,
-      "&amp;"
-    )
-    .replace(
-      /</g,
-      "&lt;"
-    )
-    .replace(
-      />/g,
-      "&gt;"
-    )
-    .replace(
-      /"/g,
-      "&quot;"
+  const symbol =
+    htmlEscape(data.symbol);
+
+  const category =
+    htmlEscape(data.market.category);
+
+  return `
+
+  <section class="live-chart-box">
+
+    <div class="chart-header">
+
+      <div>
+
+        <small>
+          LIVE MARKET CHART
+        </small>
+
+        <h3>
+          📈 ${symbol}
+        </h3>
+
+      </div>
+
+      <div class="chart-status">
+
+        <span id="chart-dot">
+          ●
+        </span>
+
+        <span id="chart-status-text">
+          Connecting...
+        </span>
+
+      </div>
+
+    </div>
+
+    <div class="chart-tools">
+
+      <button
+        type="button"
+        class="tf active"
+        data-tf="1"
+      >
+        1M
+      </button>
+
+      <button
+        type="button"
+        class="tf"
+        data-tf="5"
+      >
+        5M
+      </button>
+
+      <button
+        type="button"
+        class="tf"
+        data-tf="15"
+      >
+        15M
+      </button>
+
+      <button
+        type="button"
+        class="tf"
+        data-tf="60"
+      >
+        1H
+      </button>
+
+      <button
+        type="button"
+        id="chart-close"
+        class="chart-close"
+      >
+        ✕
+      </button>
+
+    </div>
+
+    <div class="chart-price">
+
+      <span>
+        Price
+      </span>
+
+      <b id="live-price">
+        —
+      </b>
+
+      <span id="live-change">
+        —
+      </span>
+
+    </div>
+
+    <div
+      class="chart-wrap"
+      id="chart-wrap"
+    >
+
+      <canvas
+        id="live-chart"
+      ></canvas>
+
+      <div
+        id="chart-cross"
+        class="chart-cross"
+      ></div>
+
+      <div
+        id="chart-loading"
+        class="chart-loading"
+      >
+        Loading live market data...
+      </div>
+
+    </div>
+
+    <div class="chart-info">
+
+      <div>
+        <span>Open</span>
+        <b id="c-open">—</b>
+      </div>
+
+      <div>
+        <span>High</span>
+        <b id="c-high">—</b>
+      </div>
+
+      <div>
+        <span>Low</span>
+        <b id="c-low">—</b>
+      </div>
+
+      <div>
+        <span>Close</span>
+        <b id="c-close">—</b>
+      </div>
+
+      <div>
+        <span>Volume</span>
+        <b id="c-volume">—</b>
+      </div>
+
+    </div>
+
+    <div class="chart-footer">
+
+      <span>
+        ● Bybit Live
+      </span>
+
+      <span>
+        Auto refresh: 5s
+      </span>
+
+    </div>
+
+  </section>
+
+  <script>
+
+  (() => {
+
+    const SYMBOL =
+      ${JSON.stringify(data.symbol)};
+
+    const CATEGORY =
+      ${JSON.stringify(data.market.category)};
+
+    const canvas =
+      document.getElementById("live-chart");
+
+    const ctx =
+      canvas.getContext("2d");
+
+    const wrap =
+      document.getElementById("chart-wrap");
+
+    const loading =
+      document.getElementById("chart-loading");
+
+    const statusText =
+      document.getElementById(
+        "chart-status-text"
+      );
+
+    const livePrice =
+      document.getElementById(
+        "live-price"
+      );
+
+    const liveChange =
+      document.getElementById(
+        "live-change"
+      );
+
+    const cOpen =
+      document.getElementById("c-open");
+
+    const cHigh =
+      document.getElementById("c-high");
+
+    const cLow =
+      document.getElementById("c-low");
+
+    const cClose =
+      document.getElementById("c-close");
+
+    const cVolume =
+      document.getElementById("c-volume");
+
+    const closeBtn =
+      document.getElementById(
+        "chart-close"
+      );
+
+    let interval =
+      "1";
+
+    let candles = [];
+
+    let timer = null;
+
+    let destroyed = false;
+
+    function resizeCanvas() {
+
+      const rect =
+        wrap.getBoundingClientRect();
+
+      const dpr =
+        window.devicePixelRatio || 1;
+
+      canvas.width =
+        Math.max(
+          300,
+          Math.floor(
+            rect.width * dpr
+          )
+        );
+
+      canvas.height =
+        Math.max(
+          260,
+          Math.floor(
+            rect.height * dpr
+          )
+        );
+
+      canvas.style.width =
+        rect.width + "px";
+
+      canvas.style.height =
+        rect.height + "px";
+
+      ctx.setTransform(
+        dpr,
+        0,
+        0,
+        dpr,
+        0,
+        0
+      );
+
+      draw();
+    }
+
+    function priceText(v) {
+
+      const n =
+        Number(v);
+
+      if (!Number.isFinite(n)) {
+        return "—";
+      }
+
+      if (n >= 1000) {
+        return n.toLocaleString(
+          "en-US",
+          {
+            maximumFractionDigits: 2
+          }
+        );
+      }
+
+      if (n >= 1) {
+        return n.toLocaleString(
+          "en-US",
+          {
+            maximumFractionDigits: 4
+          }
+        );
+      }
+
+      return n.toLocaleString(
+        "en-US",
+        {
+          maximumFractionDigits: 8
+        }
+      );
+    }
+
+    function volumeText(v) {
+
+      const n =
+        Number(v);
+
+      if (!Number.isFinite(n)) {
+        return "—";
+      }
+
+      if (n >= 1000000000) {
+        return (
+          (n / 1000000000)
+            .toFixed(2)
+          + "B"
+        );
+      }
+
+      if (n >= 1000000) {
+        return (
+          (n / 1000000)
+            .toFixed(2)
+          + "M"
+        );
+      }
+
+      if (n >= 1000) {
+        return (
+          (n / 1000)
+            .toFixed(2)
+          + "K"
+        );
+      }
+
+      return n.toFixed(2);
+    }
+
+    function setStatus(text) {
+
+      statusText.textContent =
+        text;
+    }
+
+    function updateInfo() {
+
+      if (!candles.length) {
+        return;
+      }
+
+      const last =
+        candles[
+          candles.length - 1
+        ];
+
+      const first =
+        candles[
+          Math.max(
+            0,
+            candles.length - 20
+          )
+        ];
+
+      const change =
+        first.close
+          ? (
+              (last.close -
+                first.close) /
+              first.close
+            ) * 100
+          : 0;
+
+      livePrice.textContent =
+        priceText(last.close);
+
+      liveChange.textContent =
+        (
+          change >= 0
+            ? "+"
+            : ""
+        ) +
+        change.toFixed(2) +
+        "%";
+
+      cOpen.textContent =
+        priceText(last.open);
+
+      cHigh.textContent =
+        priceText(last.high);
+
+      cLow.textContent =
+        priceText(last.low);
+
+      cClose.textContent =
+        priceText(last.close);
+
+      cVolume.textContent =
+        volumeText(last.volume);
+    }
+
+    function draw() {
+
+      if (
+        !ctx ||
+        !candles.length
+      ) {
+        return;
+      }
+
+      const rect =
+        wrap.getBoundingClientRect();
+
+      const width =
+        rect.width;
+
+      const height =
+        rect.height;
+
+      ctx.clearRect(
+        0,
+        0,
+        width,
+        height
+      );
+
+      const data =
+        candles.slice(-90);
+
+      if (!data.length) {
+        return;
+      }
+
+      let min =
+        Math.min(
+          ...data.map(
+            x => x.low
+          )
+        );
+
+      let max =
+        Math.max(
+          ...data.map(
+            x => x.high
+          )
+        );
+
+      if (max === min) {
+        max += 1;
+        min -= 1;
+      }
+
+      const padLeft = 8;
+      const padRight = 62;
+      const padTop = 18;
+      const padBottom = 28;
+
+      const chartWidth =
+        width -
+        padLeft -
+        padRight;
+
+      const chartHeight =
+        height -
+        padTop -
+        padBottom;
+
+      function y(v) {
+
+        return (
+          padTop +
+          (
+            (max - v) /
+            (max - min)
+          ) *
+          chartHeight
+        );
+      }
+
+      function x(i) {
+
+        return (
+          padLeft +
+          (
+            i /
+            Math.max(
+              1,
+              data.length - 1
+            )
+          ) *
+          chartWidth
+        );
+      }
+
+      /* Grid */
+
+      ctx.font =
+        "11px Arial";
+
+      ctx.textAlign =
+        "right";
+
+      ctx.textBaseline =
+        "middle";
+
+      for (
+        let i = 0;
+        i <= 5;
+        i++
+      ) {
+
+        const py =
+          padTop +
+          (
+            i / 5
+          ) *
+          chartHeight;
+
+        ctx.beginPath();
+
+        ctx.moveTo(
+          padLeft,
+          py
+        );
+
+        ctx.lineTo(
+          width - 4,
+          py
+        );
+
+        ctx.strokeStyle =
+          "rgba(255,255,255,.07)";
+
+        ctx.stroke();
+
+        const value =
+          max -
+          (
+            i / 5
+          ) *
+          (
+            max - min
+          );
+
+        ctx.fillStyle =
+          "rgba(255,255,255,.65)";
+
+        ctx.fillText(
+          priceText(value),
+          width - 6,
+          py
+        );
+      }
+
+      /* Candles */
+
+      const candleWidth =
+        Math.max(
+          2,
+          Math.min(
+            12,
+            chartWidth /
+              data.length *
+              .65
+          )
+        );
+
+      for (
+        let i = 0;
+        i < data.length;
+        i++
+      ) {
+
+        const c =
+          data[i];
+
+        const px =
+          x(i);
+
+        const openY =
+          y(c.open);
+
+        const closeY =
+          y(c.close);
+
+        const highY =
+          y(c.high);
+
+        const lowY =
+          y(c.low);
+
+        const up =
+          c.close >= c.open;
+
+        ctx.beginPath();
+
+        ctx.moveTo(
+          px,
+          highY
+        );
+
+        ctx.lineTo(
+          px,
+          lowY
+        );
+
+        ctx.strokeStyle =
+          up
+            ? "#22c55e"
+            : "#ef4444";
+
+        ctx.lineWidth =
+          1;
+
+        ctx.stroke();
+
+        const bodyTop =
+          Math.min(
+            openY,
+            closeY
+          );
+
+        const bodyHeight =
+          Math.max(
+            1,
+            Math.abs(
+              closeY -
+              openY
+            )
+          );
+
+        ctx.fillStyle =
+          up
+            ? "#22c55e"
+            : "#ef4444";
+
+        ctx.fillRect(
+          px -
+            candleWidth / 2,
+          bodyTop,
+          candleWidth,
+          bodyHeight
+        );
+      }
+
+      /* Last price */
+
+      const last =
+        data[data.length - 1];
+
+      const lastY =
+        y(last.close);
+
+      ctx.beginPath();
+
+      ctx.moveTo(
+        padLeft,
+        lastY
+      );
+
+      ctx.lineTo(
+        width - 4,
+        lastY
+      );
+
+      ctx.strokeStyle =
+        "rgba(255,255,255,.35)";
+
+      ctx.setLineDash([
+        4,
+        4
+      ]);
+
+      ctx.stroke();
+
+      ctx.setLineDash([]);
+
+      ctx.fillStyle =
+        "#111827";
+
+      ctx.fillRect(
+        width - 60,
+        lastY - 10,
+        58,
+        20
+      );
+
+      ctx.fillStyle =
+        "#ffffff";
+
+      ctx.font =
+        "11px Arial";
+
+      ctx.textAlign =
+        "center";
+
+      ctx.fillText(
+        priceText(last.close),
+        width - 31,
+        lastY
+      );
+
+      /* Time labels */
+
+      ctx.fillStyle =
+        "rgba(255,255,255,.55)";
+
+      ctx.font =
+        "10px Arial";
+
+      ctx.textAlign =
+        "center";
+
+      const step =
+        Math.max(
+          1,
+          Math.floor(
+            data.length / 5
+          )
+        );
+
+      for (
+        let i = 0;
+        i < data.length;
+        i += step
+      ) {
+
+        const d =
+          new Date(
+            data[i].time
+          );
+
+        const label =
+          d.toLocaleTimeString(
+            [],
+            {
+              hour: "2-digit",
+              minute: "2-digit"
+            }
+          );
+
+        ctx.fillText(
+          label,
+          x(i),
+          height - 9
+        );
+      }
+    }
+
+    async function loadChart() {
+
+      if (destroyed) {
+        return;
+      }
+
+      try {
+
+        setStatus(
+          "Updating..."
+        );
+
+        const url =
+          "/crypto-chart-data" +
+          "?symbol=" +
+          encodeURIComponent(
+            SYMBOL
+          ) +
+          "&category=" +
+          encodeURIComponent(
+            CATEGORY
+          ) +
+          "&interval=" +
+          encodeURIComponent(
+            interval
+          ) +
+          "&limit=120";
+
+        const response =
+          await fetch(
+            url,
+            {
+              cache:
+                "no-store"
+            }
+          );
+
+        const data =
+          await response.json();
+
+        if (
+          !data.ok
+        ) {
+
+          throw new Error(
+            data.error ||
+            "Chart data error"
+          );
+        }
+
+        candles =
+          Array.isArray(
+            data.candles
+          )
+            ? data.candles
+            : [];
+
+        loading.style.display =
+          candles.length
+            ? "none"
+            : "block";
+
+        updateInfo();
+
+        draw();
+
+        setStatus(
+          "Live"
+        );
+
+      } catch (error) {
+
+        console.error(
+          error
+        );
+
+        setStatus(
+          "Connection error"
+        );
+
+      }
+    }
+
+    function start() {
+
+      clearInterval(
+        timer
+      );
+
+      loadChart();
+
+      timer =
+        setInterval(
+          loadChart,
+          5000
+        );
+    }
+
+    document
+      .querySelectorAll(
+        ".live-chart-box .tf"
+      )
+      .forEach(
+        button => {
+
+          button.addEventListener(
+            "click",
+            () => {
+
+              document
+                .querySelectorAll(
+                  ".live-chart-box .tf"
+                )
+                .forEach(
+                  x =>
+                    x.classList.remove(
+                      "active"
+                    )
+                );
+
+              button.classList.add(
+                "active"
+              );
+
+              interval =
+                button.dataset.tf;
+
+              candles = [];
+
+              loading.style.display =
+                "block";
+
+              start();
+            }
+          );
+        }
+      );
+
+    closeBtn.addEventListener(
+      "click",
+      () => {
+
+        destroyed = true;
+
+        clearInterval(
+          timer
+        );
+
+        const box =
+          document.querySelector(
+            ".live-chart-box"
+          );
+
+        if (box) {
+          box.remove();
+        }
+      }
     );
+
+    window.addEventListener(
+      "resize",
+      resizeCanvas
+    );
+
+    resizeCanvas();
+
+    start();
+
+  })();
+
+  </script>
+  `;
 }
 
 /* =========================================================
@@ -2197,402 +2996,1136 @@ function analysisHtml(data) {
 
   return `
 
-    <section class="result">
+<!DOCTYPE html>
 
-      <div class="coin-head">
+<html lang="en">
 
-        <div>
+<head>
 
-          <small>
-            DEEP MARKET ANALYSIS
-          </small>
+<meta charset="UTF-8">
 
-          <h2>
-            🪙
-            ${htmlEscape(
-              data.symbol
-            )}
-          </h2>
+<meta
+  name="viewport"
+  content="width=device-width,initial-scale=1"
+/>
 
-        </div>
+<title>
+Global Pulse - ${htmlEscape(data.symbol)}
+</title>
 
-        <div
-          class="verdict ${data.verdict.toLowerCase()}"
-        >
+<style>
 
-          ${data.verdict}
+*{
+  box-sizing:border-box;
+}
 
-          <small>
-            ${data.overallScore}/100
-          </small>
+html{
+  scroll-behavior:smooth;
+}
 
-        </div>
+body{
 
-      </div>
+  margin:0;
 
-      <div class="cards">
+  padding:20px;
 
-        <div class="card">
+  background:
+    radial-gradient(
+      circle at top,
+      #172033 0,
+      #080b12 48%,
+      #05070b 100%
+    );
 
-          <small>
-            PRICE
-          </small>
+  color:#e5e7eb;
 
-          <b>
-            ${formatPrice(
-              data.price
-            )}
-          </b>
+  font-family:
+    Arial,
+    Helvetica,
+    sans-serif;
 
-        </div>
+}
 
-        <div class="card">
+.result{
 
-          <small>
-            1M TREND
-          </small>
+  max-width:1000px;
 
-          <b>
-            ${data.trend.oneMinute.direction}
-          </b>
+  margin:auto;
 
-        </div>
+}
 
-        <div class="card">
+.coin-head{
 
-          <small>
-            15M CONFIRMATION
-          </small>
+  display:flex;
 
-          <b>
-            ${data.trend.fifteenMinute.direction}
-          </b>
+  justify-content:space-between;
 
-        </div>
+  align-items:center;
 
-        <div class="card">
+  gap:15px;
 
-          <small>
-            1H TREND
-          </small>
+  margin-bottom:20px;
 
-          <b>
-            ${
-              data.trend.oneHour
-                ? data.trend.oneHour.direction
-                : "N/A"
-            }
-          </b>
+}
 
-        </div>
+.coin-head small{
 
-        <div class="card">
+  color:#94a3b8;
 
-          <small>
-            RSI
-          </small>
+  letter-spacing:1px;
 
-          <b>
-            ${round(
-              data.indicators.rsi,
-              2
-            )}
-          </b>
+}
 
-        </div>
+.coin-head h2{
 
-      </div>
+  margin:6px 0 0;
 
-      <h3>
-        📊 Trading Styles
-      </h3>
+  font-size:28px;
 
-      ${styles}
+}
 
-      <h3>
-        🎯 Support / Resistance
-      </h3>
+.verdict{
 
-      <div class="levels">
+  min-width:130px;
 
-        <div>
+  text-align:center;
 
-          <b>
-            🟢 Support
-          </b>
+  padding:14px;
 
-          <p>
-            ${htmlEscape(
-              supports
-            )}
-          </p>
+  border-radius:16px;
 
-        </div>
+  font-weight:800;
 
-        <div>
+  background:#1f2937;
 
-          <b>
-            🔴 Resistance
-          </b>
+}
 
-          <p>
-            ${htmlEscape(
-              resistances
-            )}
-          </p>
+.verdict small{
 
-        </div>
+  display:block;
 
-      </div>
+  margin-top:5px;
 
-      <h3>
-        💧 Liquidity / Hunt
-      </h3>
+  font-weight:500;
 
-      <div class="data-box">
+}
 
-        <b>
-          ${htmlEscape(
-            hunt.type
-          )}
-        </b>
+.verdict.bullish{
 
-        <p>
-          ${htmlEscape(
-            hunt.reason
-          )}
-        </p>
+  color:#22c55e;
 
+  border:1px solid
+    rgba(34,197,94,.4);
+
+}
+
+.verdict.bearish{
+
+  color:#ef4444;
+
+  border:1px solid
+    rgba(239,68,68,.4);
+
+}
+
+.verdict.neutral{
+
+  color:#f59e0b;
+
+  border:1px solid
+    rgba(245,158,11,.4);
+
+}
+
+.cards{
+
+  display:grid;
+
+  grid-template-columns:
+    repeat(
+      auto-fit,
+      minmax(
+        150px,
+        1fr
+      )
+    );
+
+  gap:10px;
+
+  margin-bottom:25px;
+
+}
+
+.card{
+
+  background:
+    rgba(15,23,42,.8);
+
+  border:
+    1px solid
+    rgba(255,255,255,.08);
+
+  border-radius:14px;
+
+  padding:15px;
+
+}
+
+.card small{
+
+  display:block;
+
+  color:#94a3b8;
+
+  margin-bottom:8px;
+
+}
+
+.card b{
+
+  font-size:18px;
+
+}
+
+h3{
+
+  margin-top:28px;
+
+  margin-bottom:12px;
+
+  color:#f8fafc;
+
+}
+
+.style{
+
+  background:
+    rgba(15,23,42,.82);
+
+  border:
+    1px solid
+    rgba(255,255,255,.07);
+
+  border-radius:16px;
+
+  padding:16px;
+
+  margin-bottom:10px;
+
+}
+
+.style-top{
+
+  display:flex;
+
+  justify-content:space-between;
+
+  margin-bottom:10px;
+
+}
+
+.style-top span{
+
+  font-weight:800;
+
+}
+
+.bar{
+
+  height:8px;
+
+  background:#1e293b;
+
+  border-radius:20px;
+
+  overflow:hidden;
+
+  margin-bottom:8px;
+
+}
+
+.bar i{
+
+  display:block;
+
+  height:100%;
+
+  background:
+    linear-gradient(
+      90deg,
+      #ef4444,
+      #f59e0b,
+      #22c55e
+    );
+
+}
+
+.style ul{
+
+  margin:10px 0 0;
+
+  padding-left:20px;
+
+  color:#cbd5e1;
+
+}
+
+.style li{
+
+  margin:5px 0;
+
+}
+
+.levels{
+
+  display:grid;
+
+  grid-template-columns:
+    repeat(
+      auto-fit,
+      minmax(
+        260px,
+        1fr
+      )
+    );
+
+  gap:10px;
+
+}
+
+.levels > div{
+
+  background:
+    rgba(15,23,42,.8);
+
+  padding:15px;
+
+  border-radius:14px;
+
+}
+
+.levels p{
+
+  color:#cbd5e1;
+
+  line-height:1.8;
+
+}
+
+.data-grid{
+
+  display:grid;
+
+  grid-template-columns:
+    repeat(
+      auto-fit,
+      minmax(
+        150px,
+        1fr
+      )
+    );
+
+  gap:10px;
+
+}
+
+.data-grid > div{
+
+  background:
+    rgba(15,23,42,.8);
+
+  border-radius:12px;
+
+  padding:13px;
+
+  color:#94a3b8;
+
+}
+
+.data-grid b{
+
+  display:block;
+
+  color:#f8fafc;
+
+  margin-top:7px;
+
+}
+
+.data-box,
+.conclusion{
+
+  background:
+    rgba(15,23,42,.82);
+
+  border-radius:14px;
+
+  padding:15px;
+
+  line-height:1.8;
+
+}
+
+.error{
+
+  max-width:900px;
+
+  margin:40px auto;
+
+  padding:20px;
+
+  border-radius:15px;
+
+  background:#3f1212;
+
+  color:#fca5a5;
+
+}
+
+/* =======================================================
+   LIVE CHART
+======================================================= */
+
+.live-chart-box{
+
+  margin-top:25px;
+
+  background:
+    linear-gradient(
+      180deg,
+      rgba(15,23,42,.98),
+      rgba(8,12,20,.98)
+    );
+
+  border:
+    1px solid
+    rgba(255,255,255,.1);
+
+  border-radius:20px;
+
+  padding:15px;
+
+  box-shadow:
+    0 20px 60px
+    rgba(0,0,0,.35);
+
+}
+
+.chart-header{
+
+  display:flex;
+
+  align-items:center;
+
+  justify-content:space-between;
+
+  gap:10px;
+
+  margin-bottom:12px;
+
+}
+
+.chart-header small{
+
+  color:#64748b;
+
+  letter-spacing:1px;
+
+}
+
+.chart-header h3{
+
+  margin:4px 0 0;
+
+  font-size:21px;
+
+}
+
+.chart-status{
+
+  color:#22c55e;
+
+  font-size:13px;
+
+}
+
+#chart-dot{
+
+  font-size:15px;
+
+  margin-right:4px;
+
+}
+
+.chart-tools{
+
+  display:flex;
+
+  gap:7px;
+
+  flex-wrap:wrap;
+
+  margin-bottom:10px;
+
+}
+
+.tf,
+.chart-close{
+
+  border:1px solid
+    rgba(255,255,255,.1);
+
+  background:#111827;
+
+  color:#cbd5e1;
+
+  border-radius:10px;
+
+  padding:8px 13px;
+
+  cursor:pointer;
+
+  font-weight:700;
+
+}
+
+.tf.active{
+
+  background:#2563eb;
+
+  color:white;
+
+  border-color:#3b82f6;
+
+}
+
+.chart-close{
+
+  margin-left:auto;
+
+  color:#fca5a5;
+
+}
+
+.chart-price{
+
+  display:flex;
+
+  align-items:baseline;
+
+  gap:10px;
+
+  padding:5px 3px 12px;
+
+}
+
+.chart-price span:first-child{
+
+  color:#64748b;
+
+  font-size:12px;
+
+}
+
+#live-price{
+
+  font-size:24px;
+
+  color:#f8fafc;
+
+}
+
+#live-change{
+
+  font-size:13px;
+
+  color:#22c55e;
+
+}
+
+.chart-wrap{
+
+  position:relative;
+
+  width:100%;
+
+  height:380px;
+
+  min-height:280px;
+
+  overflow:hidden;
+
+  border-radius:14px;
+
+  background:
+    #070b12;
+
+}
+
+#live-chart{
+
+  display:block;
+
+  width:100%;
+
+  height:100%;
+
+}
+
+.chart-loading{
+
+  position:absolute;
+
+  inset:0;
+
+  display:flex;
+
+  align-items:center;
+
+  justify-content:center;
+
+  color:#94a3b8;
+
+  background:
+    rgba(7,11,18,.75);
+
+  font-size:14px;
+
+}
+
+.chart-info{
+
+  display:grid;
+
+  grid-template-columns:
+    repeat(
+      auto-fit,
+      minmax(
+        110px,
+        1fr
+      )
+    );
+
+  gap:8px;
+
+  margin-top:10px;
+
+}
+
+.chart-info div{
+
+  padding:10px;
+
+  border-radius:10px;
+
+  background:#0f172a;
+
+}
+
+.chart-info span{
+
+  display:block;
+
+  color:#64748b;
+
+  font-size:11px;
+
+  margin-bottom:5px;
+
+}
+
+.chart-info b{
+
+  color:#e2e8f0;
+
+  font-size:13px;
+
+}
+
+.chart-footer{
+
+  display:flex;
+
+  justify-content:space-between;
+
+  color:#64748b;
+
+  font-size:11px;
+
+  margin-top:10px;
+
+}
+
+@media(max-width:600px){
+
+  body{
+
+    padding:10px;
+
+  }
+
+  .coin-head{
+
+    align-items:flex-start;
+
+  }
+
+  .coin-head h2{
+
+    font-size:22px;
+
+  }
+
+  .verdict{
+
+    min-width:100px;
+
+  }
+
+  .chart-wrap{
+
+    height:300px;
+
+  }
+
+}
+
+</style>
+
+</head>
+
+<body>
+
+<section class="result">
+
+  <div class="coin-head">
+
+    <div>
+
+      <small>
+        GLOBAL PULSE — CRYPTO DEEP ANALYSIS
+      </small>
+
+      <h2>
+        🪙 ${htmlEscape(data.symbol)}
+      </h2>
+
+      <small>
+        🏦 Market:
+        ${htmlEscape(data.market.type)}
+      </small>
+
+    </div>
+
+    <div
+      class="verdict ${data.verdict.toLowerCase()}"
+    >
+
+      ${data.verdict}
+
+      <small>
+        ${data.overallScore}/100
+      </small>
+
+    </div>
+
+  </div>
+
+  <div class="cards">
+
+    <div class="card">
+
+      <small>
+        PRICE
+      </small>
+
+      <b>
+        ${formatPrice(data.price)}
+      </b>
+
+    </div>
+
+    <div class="card">
+
+      <small>
+        1M TREND
+      </small>
+
+      <b>
+        ${data.trend.oneMinute.direction}
+      </b>
+
+    </div>
+
+    <div class="card">
+
+      <small>
+        15M CONFIRMATION
+      </small>
+
+      <b>
+        ${data.trend.fifteenMinute.direction}
+      </b>
+
+    </div>
+
+    <div class="card">
+
+      <small>
+        1H TREND
+      </small>
+
+      <b>
         ${
-          hunt.level
-            ? `
-              <small>
-                Level:
-                ${formatPrice(
-                  hunt.level
-                )}
-              </small>
-            `
-            : ""
+          data.trend.oneHour
+            ? data.trend.oneHour.direction
+            : "N/A"
         }
+      </b>
 
-      </div>
+    </div>
 
-      <h3>
-        👣 Footprint
-      </h3>
+    <div class="card">
 
-      <div class="data-grid">
+      <small>
+        RSI
+      </small>
 
-        <div>
-          Buy Volume
-          <b>
-            ${round(
-              f.buyVolume,
-              4
-            )}
-          </b>
+      <b>
+        ${round(
+          data.indicators.rsi,
+          2
+        )}
+      </b>
+
+    </div>
+
+  </div>
+
+  <div style="
+    margin-bottom:20px;
+    display:flex;
+    gap:10px;
+    flex-wrap:wrap;
+  ">
+
+    <button
+      id="open-live-chart"
+      type="button"
+      style="
+        border:0;
+        background:#2563eb;
+        color:#fff;
+        border-radius:12px;
+        padding:12px 18px;
+        cursor:pointer;
+        font-weight:800;
+        font-size:14px;
+      "
+    >
+      📈 چارت زنده
+    </button>
+
+  </div>
+
+  <div id="live-chart-container"></div>
+
+  <h3>
+    📊 Trading Styles
+  </h3>
+
+  ${styles}
+
+  <h3>
+    🎯 Support / Resistance
+  </h3>
+
+  <div class="levels">
+
+    <div>
+
+      <b>
+        🟢 Support
+      </b>
+
+      <p>
+        ${htmlEscape(supports)}
+      </p>
+
+    </div>
+
+    <div>
+
+      <b>
+        🔴 Resistance
+      </b>
+
+      <p>
+        ${htmlEscape(resistances)}
+      </p>
+
+    </div>
+
+  </div>
+
+  <h3>
+    💧 Liquidity / Hunt
+  </h3>
+
+  <div class="data-box">
+
+    <b>
+      ${htmlEscape(hunt.type)}
+    </b>
+
+    <p>
+      ${htmlEscape(hunt.reason)}
+    </p>
+
+    ${
+      hunt.level
+        ? `
+          <small>
+            Level:
+            ${formatPrice(hunt.level)}
+          </small>
+        `
+        : ""
+    }
+
+  </div>
+
+  <h3>
+    👣 Footprint
+  </h3>
+
+  <div class="data-grid">
+
+    <div>
+      Buy Volume
+      <b>
+        ${round(f.buyVolume,4)}
+      </b>
+    </div>
+
+    <div>
+      Sell Volume
+      <b>
+        ${round(f.sellVolume,4)}
+      </b>
+    </div>
+
+    <div>
+      Delta
+      <b>
+        ${round(f.delta,4)}
+      </b>
+    </div>
+
+    <div>
+      Delta %
+      <b>
+        ${round(f.deltaPercent,2)}%
+      </b>
+    </div>
+
+    <div>
+      Pressure
+      <b>
+        ${f.pressure}
+      </b>
+    </div>
+
+    <div>
+      Large Buy
+      <b>
+        $${Math.round(
+          f.largeBuy
+        ).toLocaleString()}
+      </b>
+    </div>
+
+    <div>
+      Large Sell
+      <b>
+        $${Math.round(
+          f.largeSell
+        ).toLocaleString()}
+      </b>
+    </div>
+
+  </div>
+
+  <h3>
+    📚 Order Book
+  </h3>
+
+  <div class="data-grid">
+
+    <div>
+      Buy Share
+      <b>
+        ${round(ob.buyShare,2)}%
+      </b>
+    </div>
+
+    <div>
+      Sell Share
+      <b>
+        ${round(ob.sellShare,2)}%
+      </b>
+    </div>
+
+    <div>
+      Best Bid
+      <b>
+        ${formatPrice(ob.bestBid)}
+      </b>
+    </div>
+
+    <div>
+      Best Ask
+      <b>
+        ${formatPrice(ob.bestAsk)}
+      </b>
+    </div>
+
+    <div>
+      Pressure
+      <b>
+        ${ob.pressure}
+      </b>
+    </div>
+
+  </div>
+
+  ${
+    data.futures
+      ? `
+
+        <h3>
+          ⚡ Derivatives Data
+        </h3>
+
+        <div class="data-grid">
+
+          <div>
+            Open Interest
+            <b>
+              ${
+                data.futures.openInterest
+                  ?? "N/A"
+              }
+            </b>
+          </div>
+
+          <div>
+            OI Value
+            <b>
+              ${
+                data.futures.openInterestValue
+                  ? "$" +
+                    Math.round(
+                      data.futures
+                        .openInterestValue
+                    ).toLocaleString()
+                  : "N/A"
+              }
+            </b>
+          </div>
+
+          <div>
+            Funding
+            <b>
+              ${
+                data.futures.fundingRate !== null
+                  ? data.futures.fundingRate
+                  : "N/A"
+              }
+            </b>
+          </div>
+
         </div>
 
-        <div>
-          Sell Volume
-          <b>
-            ${round(
-              f.sellVolume,
-              4
-            )}
-          </b>
-        </div>
+      `
+      : ""
+  }
 
-        <div>
-          Delta
-          <b>
-            ${round(
-              f.delta,
-              4
-            )}
-          </b>
-        </div>
+  <h3>
+    🧠 Deep Conclusion
+  </h3>
 
-        <div>
-          Delta %
-          <b>
-            ${round(
-              f.deltaPercent,
-              2
-            )}%
-          </b>
-        </div>
+  <div class="conclusion">
 
-        <div>
-          Pressure
-          <b>
-            ${f.pressure}
-          </b>
-        </div>
+    ${
+      data.confirmations
+        .map(
+          x =>
+            `<div>
+              • ${htmlEscape(x)}
+            </div>`
+        )
+        .join("")
+    }
 
-        <div>
-          Large Buy
-          <b>
-            $${Math.round(
-              f.largeBuy
-            ).toLocaleString()}
-          </b>
-        </div>
+  </div>
 
-        <div>
-          Large Sell
-          <b>
-            $${Math.round(
-              f.largeSell
-            ).toLocaleString()}
-          </b>
-        </div>
+  <footer style="
+    margin-top:25px;
+    color:#64748b;
+    text-align:center;
+  ">
 
-      </div>
+    📊 Analysis based on live Bybit public market data
 
-      <h3>
-        📚 Order Book
-      </h3>
+  </footer>
 
-      <div class="data-grid">
+</section>
 
-        <div>
-          Buy Share
-          <b>
-            ${round(
-              ob.buyShare,
-              2
-            )}%
-          </b>
-        </div>
+<script>
 
-        <div>
-          Sell Share
-          <b>
-            ${round(
-              ob.sellShare,
-              2
-            )}%
-          </b>
-        </div>
+document
+  .getElementById(
+    "open-live-chart"
+  )
+  .addEventListener(
+    "click",
+    async function(){
 
-        <div>
-          Best Bid
-          <b>
-            ${formatPrice(
-              ob.bestBid
-            )}
-          </b>
-        </div>
+      const container =
+        document.getElementById(
+          "live-chart-container"
+        );
 
-        <div>
-          Best Ask
-          <b>
-            ${formatPrice(
-              ob.bestAsk
-            )}
-          </b>
-        </div>
+      if (
+        container.innerHTML.trim()
+      ) {
 
-        <div>
-          Pressure
-          <b>
-            ${ob.pressure}
-          </b>
-        </div>
+        container.scrollIntoView({
+          behavior:"smooth",
+          block:"start"
+        });
 
-      </div>
-
-      ${
-        data.futures
-          ? `
-
-            <h3>
-              ⚡ Derivatives Data
-            </h3>
-
-            <div class="data-grid">
-
-              <div>
-
-                Open Interest
-
-                <b>
-                  ${
-                    data.futures.openInterest
-                      ?? "N/A"
-                  }
-                </b>
-
-              </div>
-
-              <div>
-
-                OI Value
-
-                <b>
-
-                  $${data.futures
-                    .openInterestValue
-                    ? Math.round(
-                        data.futures
-                          .openInterestValue
-                      ).toLocaleString()
-                    : "N/A"}
-
-                </b>
-
-              </div>
-
-              <div>
-
-                Funding
-
-                <b>
-
-                  ${
-                    data.futures
-                      .fundingRate !== null
-                      ? data.futures
-                          .fundingRate
-                      : "N/A"
-                  }
-
-                </b>
-
-              </div>
-
-            </div>
-
-          `
-          : ""
+        return;
       }
 
-      <h3>
-        🧠 Deep Conclusion
-      </h3>
+      container.innerHTML =
+        ${JSON.stringify(chartHtml(data))};
 
-      <div class="conclusion">
+      container.scrollIntoView({
+        behavior:"smooth",
+        block:"start"
+      });
 
-        ${
-          data.confirmations
-            .map(
-              x =>
-                `<div>
-                  • ${htmlEscape(x)}
-                </div>`
-            )
-            .join("")
-        }
+    }
+  );
 
-      </div>
+</script>
 
-      <footer>
-        📊 Analysis based on Bybit information
-      </footer>
+</body>
 
-    </section>
+</html>
+
   `;
 }
 
@@ -2665,6 +4198,9 @@ export default {
           cryptoAnalyzer:
             true,
 
+          liveChart:
+            true,
+
           time:
             new Date().toISOString()
         });
@@ -2719,6 +4255,163 @@ export default {
         return json(
           result
         );
+      }
+
+      /* ===================================================
+         LIVE CHART DATA
+      =================================================== */
+
+      if (
+        request.method === "GET" &&
+        url.pathname ===
+          "/crypto-chart-data"
+      ) {
+
+        const input =
+          url.searchParams.get(
+            "symbol"
+          );
+
+        const requestedCategory =
+          lowerCategory(
+            url.searchParams.get(
+              "category"
+            )
+          );
+
+        const interval =
+          url.searchParams.get(
+            "interval"
+          ) || "1";
+
+        const limit =
+          num(
+            url.searchParams.get(
+              "limit"
+            ),
+            LIVE_CHART_LIMIT
+          );
+
+        if (!input) {
+
+          return json({
+
+            ok: false,
+
+            error:
+              "Symbol is required"
+
+          }, 400);
+        }
+
+        if (
+          blocked(input)
+        ) {
+
+          return json({
+
+            ok: false,
+
+            error:
+              "This symbol is not available."
+
+          }, 403);
+        }
+
+        const found =
+          await findSymbol(
+            input
+          );
+
+        if (!found.found) {
+
+          return json({
+
+            ok: false,
+
+            error:
+              `Symbol ${found.symbol} was not found on Bybit`
+
+          }, 404);
+        }
+
+        let category =
+          found.category;
+
+        /*
+         * اگر Frontend دسته‌بندی فرستاد،
+         * فقط در صورتی استفاده می‌کنیم
+         * که با بازار واقعی Symbol هماهنگ باشد.
+         */
+
+        if (
+          requestedCategory === "spot" &&
+          found.category === "spot"
+        ) {
+
+          category = "spot";
+        }
+
+        if (
+          requestedCategory === "linear" &&
+          found.category === "linear"
+        ) {
+
+          category = "linear";
+        }
+
+        const allowedIntervals = [
+          "1",
+          "3",
+          "5",
+          "15",
+          "30",
+          "60",
+          "120",
+          "240",
+          "360",
+          "720",
+          "D"
+        ];
+
+        const safeInterval =
+          allowedIntervals.includes(
+            String(interval)
+          )
+            ? String(interval)
+            : "1";
+
+        const candles =
+          await getLiveChartData(
+            category,
+            found.symbol,
+            safeInterval,
+            limit
+          );
+
+        return json({
+
+          ok: true,
+
+          symbol:
+            found.symbol,
+
+          category,
+
+          market:
+            found.market,
+
+          interval:
+            safeInterval,
+
+          candles,
+
+          serverTime:
+            Date.now(),
+
+          source:
+            "Bybit"
+        });
       }
 
       /* ===================================================
@@ -2779,7 +4472,9 @@ export default {
           {
             headers: {
               "content-type":
-                "text/html; charset=utf-8"
+                "text/html; charset=utf-8",
+              "cache-control":
+                "no-store"
             }
           }
         );
@@ -2812,6 +4507,7 @@ export default {
 
           path:
             url.pathname
+
         })
       );
 
@@ -2827,3 +4523,30 @@ export default {
     }
   }
 };
+
+/* =========================================================
+   CATEGORY HELPER
+========================================================= */
+
+function lowerCategory(v) {
+
+  const x =
+    String(v || "")
+      .trim()
+      .toLowerCase();
+
+  if (
+    x === "spot"
+  ) {
+    return "spot";
+  }
+
+  if (
+    x === "linear" ||
+    x === "futures"
+  ) {
+    return "linear";
+  }
+
+  return "";
+}
