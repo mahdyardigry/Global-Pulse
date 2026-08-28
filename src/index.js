@@ -55,20 +55,7 @@ export default {
     try {
 
       /* =========================
-         پیدا کردن آیدی کانال
-      ========================= */
-
-      if (url.pathname === "/find-channel") {
-        const updates = await telegram(env, "getUpdates");
-
-        return json({
-          ok: true,
-          updates: updates.result || []
-        });
-      }
-
-      /* =========================
-         وضعیت Worker
+         Health Check
       ========================= */
 
       if (url.pathname === "/") {
@@ -78,6 +65,42 @@ export default {
           worker: "telegram-auto-channel",
           status: "online",
           time: new Date().toISOString()
+        });
+      }
+
+      /* =========================
+         Debug Environment
+         توکن نمایش داده نمی‌شود
+      ========================= */
+
+      if (url.pathname === "/debug-env") {
+        return json({
+          ok: true,
+
+          telegram_bot_token:
+            !!env.TELEGRAM_BOT_TOKEN,
+
+          telegram_channel_id:
+            !!env.TELEGRAM_CHANNEL_ID,
+
+          channel_id:
+            env.TELEGRAM_CHANNEL_ID || null,
+
+          env_keys:
+            Object.keys(env)
+        });
+      }
+
+      /* =========================
+         پیدا کردن آیدی کانال
+      ========================= */
+
+      if (url.pathname === "/find-channel") {
+        const updates = await telegram(env, "getUpdates");
+
+        return json({
+          ok: true,
+          updates: updates.result || []
         });
       }
 
@@ -138,7 +161,7 @@ export default {
       }
 
       /* =========================
-         Not Found
+         404
       ========================= */
 
       return json(
