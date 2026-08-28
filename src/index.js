@@ -1,13 +1,25 @@
 const TELEGRAM_API = "https://api.telegram.org";
 
+const SERVICE_NAME = "Global Pulse";
+const WORKER_NAME = "telegram-auto-channel";
+
+/* =========================
+   JSON RESPONSE
+========================= */
+
 function json(data, status = 200) {
   return new Response(JSON.stringify(data, null, 2), {
     status,
     headers: {
-      "content-type": "application/json; charset=utf-8"
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store"
     }
   });
 }
+
+/* =========================
+   TELEGRAM API
+========================= */
 
 async function telegram(env, method, body = {}) {
   if (!env.TELEGRAM_BOT_TOKEN) {
@@ -36,79 +48,116 @@ async function telegram(env, method, body = {}) {
   return data;
 }
 
+/* =========================
+   SEND MESSAGE
+========================= */
+
 async function sendMessage(env, text) {
   if (!env.TELEGRAM_CHANNEL_ID) {
     throw new Error("TELEGRAM_CHANNEL_ID is not configured");
   }
 
+  if (!text || !String(text).trim()) {
+    throw new Error("Message text is empty");
+  }
+
   return telegram(env, "sendMessage", {
     chat_id: env.TELEGRAM_CHANNEL_ID,
-    text,
+    text: String(text),
     disable_web_page_preview: true
   });
 }
 
+/* =========================
+   SAFE ENV STATUS
+========================= */
+
+function envStatus(env) {
+  return {
+    telegram_bot_token: !!env.TELEGRAM_BOT_TOKEN,
+    telegram_channel_id: !!env.TELEGRAM_CHANNEL_ID,
+    channel_id: env.TELEGRAM_CHANNEL_ID || null
+  };
+}
+
+/* =========================
+   DEFAULT GLOBAL PULSE MESSAGE
+========================= */
+
+function buildStartupMessage() {
+  return [
+    "🌍 Global Pulse",
+    "",
+    "🤖 Global Pulse Assistant",
+    "",
+    "✅ سیستم انتشار خودکار فعال است.",
+    "📡 اتصال Worker به Telegram برقرار است.",
+    "",
+    "⚙️ آماده دریافت و انتشار محتوای Global Pulse."
+  ].join("\n");
+}
+
+/* =========================
+   REQUEST BODY
+========================= */
+
+async function readJson(request) {
+  try {
+    return await request.json();
+  } catch {
+    return {};
+  }
+}
+
+/* =========================
+   WORKER
+========================= */
+
 export default {
-  async fetch(request, env) {
+
+  /* =========================
+     HTTP
+  ========================= */
+
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
     try {
 
       /* =========================
-         Health Check
+         HEALTH CHECK
       ========================= */
 
       if (url.pathname === "/") {
         return json({
           ok: true,
-          service: "Global Pulse",
-          worker: "telegram-auto-channel",
+          service: SERVICE_NAME,
+          worker: WORKER_NAME,
           status: "online",
-          time: new Date().toISOString()
+          time: new Date().toISOString(),
+          telegram: envStatus(env)
         });
       }
 
       /* =========================
-         Debug Environment
-         توکن نمایش داده نمی‌شود
+         DEBUG ENV
+         توکن هرگز نمایش داده نمی‌شود
       ========================= */
 
       if (url.pathname === "/debug-env") {
         return json({
           ok: true,
-
-          telegram_bot_token:
-            !!env.TELEGRAM_BOT_TOKEN,
-
-          telegram_channel_id:
-            !!env.TELEGRAM_CHANNEL_ID,
-
-          channel_id:
-            env.TELEGRAM_CHANNEL_ID || null,
-
-          env_keys:
-            Object.keys(env)
+          ...envStatus(env),
+          env_keys: Object.keys(env)
         });
       }
 
       /* =========================
-         پیدا کردن آیدی کانال
-      ========================= */
-
-      if (url.pathname === "/find-channel") {
-        const updates = await telegram(env, "getUpdates");
-
-        return json({
-          ok: true,
-          updates: updates.result || []
-        });
-      }
-
-      /* =========================
-         تست ربات
+         TELEGRAM BOT INFO
       ========================= */
 
       if (url.pathname === "/test-telegram") {
+
         const me = await telegram(env, "getMe");
 
         return json({
@@ -119,44 +168,156 @@ export default {
       }
 
       /* =========================
-         تست ارسال به کانال
+         TELEGRAM CHANNEL TEST
       ========================= */
 
       if (url.pathname === "/test-channel") {
-        const message =
-          "🌍 Global Pulse\n\n" +
-          "✅ اتصال Worker به کانال برقرار است.\n\n" +
-          "🤖 Global Pulse Assistant\n" +
-          "⚙️ سیستم انتشار خودکار آماده راه‌اندازی است.";
+
+        const message = [
+          "🌍 Global Pulse",
+          "",
+          "✅ اتصال Worker به کانال برقرار است.",
+          "",
+          "🤖 Global Pulse Assistant",
+          "⚙️ سیستم انتشار خودکار آماده است.",
+          "",
+          `🕒 ${new Date().toISOString()}`
+        ].join("\n");
 
         const result = await sendMessage(env, message);
 
         return json({
           ok: true,
-          message_id: result.result.message_id,
+          sent: true,
+          message_id: result.result?.message_id || null,
           channel_id: env.TELEGRAM_CHANNEL_ID
         });
       }
 
       /* =========================
-         Telegram Webhook
+         MANUAL SEND
+         
+         POST /send
+         {
+           "text": "پیام شما"
+         }
+      ========================= */
+
+      if (
+        request.method === "POST" &&
+        url.pathname === "/send"
+      ) {
+
+        const body = await readJson(request);
+
+        const text =
+          typeof body.text === "string"
+            ? body.text.trim()
+            : "";
+
+        if (!text) {
+          return json(
+            {
+              ok: false,
+              error: "text is required"
+            },
+            400
+          );
+        }
+
+        const result = await sendMessage(env, text);
+
+        return json({
+          ok: true,
+          sent: true,
+          message_id: result.result?.message_id || null,
+          channel_id: env.TELEGRAM_CHANNEL_ID
+        });
+      }
+
+      /* =========================
+         GLOBAL PULSE STARTUP
+      ========================= */
+
+      if (url.pathname === "/publish-startup") {
+
+        const message = buildStartupMessage();
+
+        const result = await sendMessage(env, message);
+
+        return json({
+          ok: true,
+          sent: true,
+          type: "startup",
+          message_id: result.result?.message_id || null,
+          channel_id: env.TELEGRAM_CHANNEL_ID
+        });
+      }
+
+      /* =========================
+         FIND TELEGRAM UPDATES
+      ========================= */
+
+      if (url.pathname === "/find-channel") {
+
+        const updates = await telegram(env, "getUpdates");
+
+        return json({
+          ok: true,
+          count: Array.isArray(updates.result)
+            ? updates.result.length
+            : 0,
+          updates: updates.result || []
+        });
+      }
+
+      /* =========================
+         TELEGRAM WEBHOOK
       ========================= */
 
       if (
         request.method === "POST" &&
         url.pathname === "/telegram-webhook"
       ) {
+
         const update = await request.json();
 
         console.log(
           JSON.stringify({
             type: "telegram_update",
-            update_id: update.update_id || null
+            update_id: update?.update_id || null,
+            received_at: new Date().toISOString()
           })
         );
 
         return json({
-          ok: true
+          ok: true,
+          received: true
+        });
+      }
+
+      /* =========================
+         CRON TEST ENDPOINT
+      ========================= */
+
+      if (url.pathname === "/cron-test") {
+
+        const message = [
+          "🌍 Global Pulse",
+          "",
+          "⏰ Cron Worker فعال است.",
+          "",
+          "✅ سیستم زمان‌بندی با موفقیت اجرا شد.",
+          `🕒 ${new Date().toISOString()}`
+        ].join("\n");
+
+        const result = await sendMessage(env, message);
+
+        return json({
+          ok: true,
+          cron: true,
+          sent: true,
+          message_id: result.result?.message_id || null
         });
       }
 
@@ -167,20 +328,70 @@ export default {
       return json(
         {
           ok: false,
-          error: "Not Found"
+          error: "Not Found",
+          path: url.pathname
         },
         404
       );
 
     } catch (error) {
-      console.error(error);
+
+      console.error(
+        JSON.stringify({
+          error: error?.message || String(error),
+          path: url.pathname,
+          time: new Date().toISOString()
+        })
+      );
 
       return json(
         {
           ok: false,
-          error: error.message || String(error)
+          error: error?.message || String(error)
         },
         500
+      );
+    }
+  },
+
+  /* =========================
+     CRON
+  ========================= */
+
+  async scheduled(event, env, ctx) {
+
+    try {
+
+      const message = [
+        "🌍 Global Pulse",
+        "",
+        "⏰ اجرای خودکار Worker",
+        "",
+        "✅ سیستم فعال است.",
+        "📡 اتصال Telegram برقرار است.",
+        "",
+        `🕒 ${new Date().toISOString()}`
+      ].join("\n");
+
+      ctx.waitUntil(
+        sendMessage(env, message)
+      );
+
+      console.log(
+        JSON.stringify({
+          type: "cron_execution",
+          time: new Date().toISOString()
+        })
+      );
+
+    } catch (error) {
+
+      console.error(
+        JSON.stringify({
+          type: "cron_error",
+          error: error?.message || String(error),
+          time: new Date().toISOString()
+        })
       );
     }
   }
