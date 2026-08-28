@@ -11,5 +11,12 @@
     "crons": [
       "*/15 * * * *"
     ]
-  }
+  },
+
+  "kv_namespaces": [
+    {
+      "binding": "NEWS_CACHE",
+      "id": "YOUR_KV_NAMESPACE_ID"
+    }
+  ]
 }
