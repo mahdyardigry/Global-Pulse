@@ -1,59 +1,65 @@
 const TELEGRAM_API = "https://api.telegram.org";
 
 /* =========================================================
-   GLOBAL PULSE — TELEGRAM AUTO CHANNEL V2
-   ---------------------------------------------------------
+   GLOBAL PULSE — TELEGRAM AUTO CHANNEL
+   VERSION 3
+   =========================================================
    امکانات:
    - Telegram Bot
-   - ارسال متن
-   - ارسال HTML
-   - ارسال عکس
-   - ارسال خبر کامل
-   - فیلتر محتوای مرتبط با ایران
-   - جلوگیری از خبرهای تکراری در حافظه کوتاه‌مدت
+   - ارسال متن / HTML / عکس
+   - انتشار خبر کامل
+   - فیلتر کامل محتوای مرتبط با ایران
+   - جلوگیری از خبر تکراری در حافظه Worker
    - Global News
    - Global Price
    - Country Battle
-   - Cost of Living
    - Global Trend
+   - Cost of Living
    - Health / Debug
-   ========================================================= */
-
-
-/* =========================================================
-   CONFIG
+   - آماده برای اتصال News API / RSS / AI
+   - بدون نیاز به KV
    ========================================================= */
 
 const CONFIG = {
   SERVICE: "Global Pulse",
   WORKER: "telegram-auto-channel",
 
-  // مدت نگهداری هش خبرهای منتشرشده در حافظه Worker
-  DUPLICATE_TTL: 86400,
-
-  // حداکثر طول متن تلگرام
-  TELEGRAM_MAX_LENGTH: 4096,
-
-  // زبان محتوای کانال
   LANGUAGE: "en",
 
-  // کشورهای حذف‌شده از محتوای خبری
-  BLOCKED_COUNTRIES: [
+  TELEGRAM_MAX_LENGTH: 4096,
+  TELEGRAM_CAPTION_LENGTH: 1024,
+
+  /* نگهداری هش خبرها در حافظه Worker */
+  DUPLICATE_TTL_MS: 24 * 60 * 60 * 1000,
+
+  /*
+   * کشورهای/کلیدواژه‌های ممنوع
+   * هر محتوایی که این موارد را داشته باشد منتشر نمی‌شود.
+   */
+  BLOCKED_TERMS: [
     "iran",
-    "islamic republic of iran",
     "iranian",
+    "islamic republic of iran",
+    "tehran",
+    "persia",
+    "persian",
     "ایران",
     "ایرانی",
     "تهران",
-    "tehran",
-    "persia",
-    "persian"
+    "پرشیا"
   ]
 };
 
 
 /* =========================================================
-   JSON
+   SHORT-TERM DUPLICATE MEMORY
+   ========================================================= */
+
+const recentNews = new Map();
+
+
+/* =========================================================
+   JSON RESPONSE
    ========================================================= */
 
 function json(data, status = 200) {
@@ -80,14 +86,18 @@ function cleanText(value) {
     .trim();
 }
 
+
 function escapeHtml(value) {
   return String(value || "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
+
 function truncate(text, max = CONFIG.TELEGRAM_MAX_LENGTH) {
+
   const value = String(text || "");
 
   if (value.length <= max) {
@@ -99,66 +109,155 @@ function truncate(text, max = CONFIG.TELEGRAM_MAX_LENGTH) {
 
 
 /* =========================================================
-   IRAN FILTER
+   URL VALIDATION
    ========================================================= */
 
-function containsBlockedContent(text) {
-  const value = cleanText(text).toLowerCase();
+function validUrl(value) {
 
   if (!value) {
     return false;
   }
 
-  return CONFIG.BLOCKED_COUNTRIES.some(
-    word => value.includes(word.toLowerCase())
-  );
-}
+  try {
 
+    const url = new URL(value);
 
-/*
- * بررسی قوی‌تر برای عنوان + متن + منبع
- */
+    return (
+      url.protocol === "http:" ||
+      url.protocol === "https:"
+    );
 
-function isAllowedContent({
-  title = "",
-  description = "",
-  content = "",
-  source = "",
-  country = ""
-} = {}) {
+  } catch {
 
-  const combined = [
-    title,
-    description,
-    content,
-    source,
-    country
-  ].join(" ");
-
-  return !containsBlockedContent(combined);
+    return false;
+  }
 }
 
 
 /* =========================================================
-   DUPLICATE KEY
+   IRAN FILTER
+   ========================================================= */
+
+function containsBlockedContent(text) {
+
+  const value =
+    cleanText(text).toLowerCase();
+
+  if (!value) {
+    return false;
+  }
+
+  return CONFIG.BLOCKED_TERMS.some(
+    term =>
+      value.includes(
+        term.toLowerCase()
+      )
+  );
+}
+
+
+/* =========================================================
+   CONTENT VALIDATION
+   ========================================================= */
+
+function isAllowedContent({
+  title = "",
+  summary = "",
+  content = "",
+  why = "",
+  source = "",
+  country = "",
+  tags = []
+} = {}) {
+
+  const combined = [
+    title,
+    summary,
+    content,
+    why,
+    source,
+    country,
+    Array.isArray(tags)
+      ? tags.join(" ")
+      : tags
+  ].join(" ");
+
+  return !containsBlockedContent(
+    combined
+  );
+}
+
+
+/* =========================================================
+   SHA-256
    ========================================================= */
 
 async function sha256(text) {
-  const data = new TextEncoder().encode(
-    cleanText(text).toLowerCase()
-  );
 
-  const hash = await crypto.subtle.digest(
-    "SHA-256",
-    data
-  );
+  const data =
+    new TextEncoder().encode(
+      cleanText(text).toLowerCase()
+    );
+
+  const hash =
+    await crypto.subtle.digest(
+      "SHA-256",
+      data
+    );
 
   return [...new Uint8Array(hash)]
     .map(
       byte =>
-        byte.toString(16).padStart(2, "0")
+        byte
+          .toString(16)
+          .padStart(2, "0")
     )
     .join("");
+}
+
+
+/* =========================================================
+   DUPLICATE MEMORY
+   ========================================================= */
+
+function cleanupDuplicateMemory() {
+
+  const now =
+    Date.now();
+
+  for (
+    const [key, timestamp]
+    of recentNews.entries()
+  ) {
+
+    if (
+      now - timestamp >
+      CONFIG.DUPLICATE_TTL_MS
+    ) {
+
+      recentNews.delete(key);
+    }
+  }
+}
+
+
+async function isDuplicateNews(key) {
+
+  cleanupDuplicateMemory();
+
+  const hash =
+    await sha256(key);
+
+  if (recentNews.has(hash)) {
+    return true;
+  }
+
+  recentNews.set(
+    hash,
+    Date.now()
+  );
+
+  return false;
 }
 
 
@@ -166,31 +265,44 @@ async function sha256(text) {
    TELEGRAM API
    ========================================================= */
 
-async function telegram(env, method, body = {}) {
+async function telegram(
+  env,
+  method,
+  body = {}
+) {
 
   if (!env.TELEGRAM_BOT_TOKEN) {
+
     throw new Error(
       "TELEGRAM_BOT_TOKEN is not configured"
     );
   }
 
-  const response = await fetch(
-    `${TELEGRAM_API}/bot${env.TELEGRAM_BOT_TOKEN}/${method}`,
-    {
-      method: "POST",
-      headers: {
-        "content-type": "application/json"
-      },
-      body: JSON.stringify(body)
-    }
-  );
+  const response =
+    await fetch(
+      `${TELEGRAM_API}/bot${env.TELEGRAM_BOT_TOKEN}/${method}`,
+      {
+        method: "POST",
 
-  const data = await response.json();
+        headers: {
+          "content-type":
+            "application/json"
+        },
+
+        body:
+          JSON.stringify(body)
+      }
+    );
+
+  const data =
+    await response.json();
 
   if (!data.ok) {
+
     throw new Error(
       `Telegram API error: ${
-        data.description || "Unknown error"
+        data.description ||
+        "Unknown error"
       }`
     );
   }
@@ -200,16 +312,16 @@ async function telegram(env, method, body = {}) {
 
 
 /* =========================================================
-   CHANNEL ID
+   CHANNEL
    ========================================================= */
 
 function getChannelId(env) {
 
   const id =
-    env.TELEGRAM_CHANNEL_ID ||
-    "";
+    env.TELEGRAM_CHANNEL_ID;
 
   if (!id) {
+
     throw new Error(
       "TELEGRAM_CHANNEL_ID is not configured"
     );
@@ -223,15 +335,21 @@ function getChannelId(env) {
    SEND TEXT
    ========================================================= */
 
-async function sendMessage(env, text) {
+async function sendMessage(
+  env,
+  text
+) {
 
   const channelId =
     getChannelId(env);
 
   const message =
-    truncate(String(text || ""));
+    truncate(
+      String(text || "")
+    );
 
   if (!message.trim()) {
+
     throw new Error(
       "Message text is empty"
     );
@@ -262,9 +380,12 @@ async function sendHtmlMessage(
     getChannelId(env);
 
   const message =
-    truncate(String(html || ""));
+    truncate(
+      String(html || "")
+    );
 
   if (!message.trim()) {
+
     throw new Error(
       "HTML message is empty"
     );
@@ -296,9 +417,10 @@ async function sendPhoto(
   const channelId =
     getChannelId(env);
 
-  if (!photo) {
+  if (!validUrl(photo)) {
+
     throw new Error(
-      "Photo URL is empty"
+      "Invalid photo URL"
     );
   }
 
@@ -308,7 +430,11 @@ async function sendPhoto(
     {
       chat_id: channelId,
       photo,
-      caption: truncate(caption, 1024),
+      caption:
+        truncate(
+          caption,
+          CONFIG.TELEGRAM_CAPTION_LENGTH
+        ),
       parse_mode: "HTML"
     }
   );
@@ -316,36 +442,74 @@ async function sendPhoto(
 
 
 /* =========================================================
-   SEND NEWS POST
+   NEWS POST
    ========================================================= */
 
 async function publishNews(
   env,
-  {
-    title,
-    summary,
-    why,
-    source,
-    sourceUrl,
-    imageUrl,
-    credibility = 0,
-    tags = []
-  }
+  body
 ) {
+
+  const {
+    title = "",
+    summary = "",
+    content = "",
+    why = "",
+    source = "",
+    sourceUrl = "",
+    imageUrl = "",
+    credibility = 0,
+    category = "Global News",
+    country = "",
+    tags = []
+  } = body || {};
+
+
+  if (!title) {
+
+    throw new Error(
+      "News title is required"
+    );
+  }
+
 
   if (
     !isAllowedContent({
       title,
-      description: summary,
-      content: why,
-      source
+      summary,
+      content,
+      why,
+      source,
+      country,
+      tags
     })
   ) {
 
     return {
       ok: false,
       skipped: true,
-      reason: "blocked-content"
+      reason:
+        "blocked-content"
+    };
+  }
+
+
+  /*
+   * جلوگیری از خبر تکراری
+   */
+
+  const duplicate =
+    await isDuplicateNews(
+      `${title}|${source}|${sourceUrl}`
+    );
+
+  if (duplicate) {
+
+    return {
+      ok: false,
+      skipped: true,
+      reason:
+        "duplicate"
     };
   }
 
@@ -356,101 +520,136 @@ async function publishNews(
   const cleanSummary =
     cleanText(summary);
 
+  const cleanContent =
+    cleanText(content);
+
   const cleanWhy =
     cleanText(why);
 
   const cleanSource =
     cleanText(source);
 
-  const cleanUrl =
+  const cleanSourceUrl =
     cleanText(sourceUrl);
 
 
-  const duplicateKey =
-    await sha256(
-      `${cleanTitle}|${cleanSource}`
-    );
+  const tagText =
+    Array.isArray(tags) &&
+    tags.length
+      ? tags
+          .map(
+            tag =>
+              "#" +
+              String(tag)
+                .replace(
+                  /\s+/g,
+                  ""
+                )
+          )
+          .join(" ")
+      : "#GlobalPulse";
 
 
-  const post =
-`🌍 <b>GLOBAL PULSE</b>
+  let post = [
+    "🌍 <b>GLOBAL PULSE</b>",
+    "",
+    `📰 <b>${escapeHtml(
+      cleanTitle
+    )}</b>`,
+    "",
+    category
+      ? `📌 <b>${escapeHtml(
+          category
+        )}</b>`
+      : "",
+    "",
+    cleanSummary
+      ? escapeHtml(
+          cleanSummary
+        )
+      : "",
+    "",
+    cleanContent
+      ? `📖 <b>Full story</b>\n${escapeHtml(
+          cleanContent
+        )}`
+      : "",
+    "",
+    cleanWhy
+      ? `💡 <b>Why it matters</b>\n${escapeHtml(
+          cleanWhy
+        )}`
+      : "",
+    "",
+    cleanSource
+      ? `🔎 <b>Source:</b> ${escapeHtml(
+          cleanSource
+        )}`
+      : "",
+    credibility
+      ? `🛡️ <b>Source credibility:</b> ${Number(
+          credibility
+        ) || 0}/100`
+      : "",
+    "",
+    validUrl(cleanSourceUrl)
+      ? `🔗 <a href="${escapeHtml(
+          cleanSourceUrl
+        )}">Read original source</a>`
+      : "",
+    "",
+    tagText
+  ]
+    .filter(Boolean)
+    .join("\n");
 
-📰 <b>${escapeHtml(cleanTitle)}</b>
 
-${escapeHtml(cleanSummary)}
-
-💡 <b>Why it matters</b>
-${escapeHtml(cleanWhy)}
-
-🔎 <b>Source:</b> ${escapeHtml(cleanSource)}
-🛡️ <b>Source credibility:</b> ${Number(credibility) || 0}/100
-
-${cleanUrl ? `🔗 <a href="${escapeHtml(cleanUrl)}">Read the original source</a>` : ""}
-
-${tags.length
-  ? tags.map(
-      tag => `#${String(tag).replace(/\s+/g, "")}`
-    ).join(" ")
-  : "#GlobalPulse"
-}`;
+  post =
+    truncate(post);
 
 
   /*
-   * اگر KV برای duplicate detection وجود داشته باشد
+   * ارسال عکس
    */
 
-  if (env.GLOBAL_PULSE_KV) {
+  if (
+    imageUrl &&
+    validUrl(imageUrl)
+  ) {
 
-    const exists =
-      await env.GLOBAL_PULSE_KV.get(
-        `news:${duplicateKey}`
-      );
+    try {
 
-    if (exists) {
+      const result =
+        await sendPhoto(
+          env,
+          imageUrl,
+          post
+        );
 
       return {
-        ok: false,
-        skipped: true,
-        reason: "duplicate"
+        ok: true,
+        type: "photo",
+        message_id:
+          result.result.message_id
       };
-    }
 
-    await env.GLOBAL_PULSE_KV.put(
-      `news:${duplicateKey}`,
-      "published",
-      {
-        expirationTtl:
-          CONFIG.DUPLICATE_TTL
-      }
-    );
-  }
+    } catch (error) {
 
+      /*
+       * اگر تصویر خراب بود
+       * خبر را بدون تصویر می‌فرستیم.
+       */
 
-  /*
-   * اگر عکس وجود داشته باشد
-   * عکس + کپشن
-   */
-
-  if (imageUrl) {
-
-    const result =
-      await sendPhoto(
-        env,
-        imageUrl,
-        post
+      console.error(
+        "PHOTO_SEND_FAILED",
+        error.message
       );
-
-    return {
-      ok: true,
-      type: "photo",
-      message_id:
-        result.result.message_id
-    };
+    }
   }
 
 
   /*
-   * بدون عکس
+   * ارسال متن کامل
    */
 
   const result =
@@ -469,41 +668,66 @@ ${tags.length
 
 
 /* =========================================================
-   GLOBAL PRICE POST
+   GLOBAL PRICE
    ========================================================= */
 
 async function publishPriceComparison(
   env,
-  {
-    product,
-    prices,
-    checkedDate,
-    source
-  }
+  body
 ) {
+
+  const {
+    product = "",
+    prices = [],
+    checkedDate = "",
+    source = "",
+    sourceUrl = ""
+  } = body || {};
+
 
   if (
     !product ||
     !Array.isArray(prices) ||
     !prices.length
   ) {
+
     throw new Error(
       "Invalid price comparison data"
     );
   }
 
 
+  if (
+    containsBlockedContent(
+      `${product} ${source}`
+    )
+  ) {
+
+    return {
+      ok: false,
+      skipped: true,
+      reason:
+        "blocked-content"
+    };
+  }
+
+
   const validPrices =
-    prices.filter(item =>
-      item &&
-      item.country &&
-      Number.isFinite(
-        Number(item.price)
-      )
+    prices.filter(
+      item =>
+        item &&
+        item.country &&
+        !containsBlockedContent(
+          item.country
+        ) &&
+        Number.isFinite(
+          Number(item.price)
+        )
     );
 
 
   if (!validPrices.length) {
+
     throw new Error(
       "No valid prices"
     );
@@ -521,20 +745,29 @@ async function publishPriceComparison(
     validPrices[0];
 
 
-  let lines = [
+  const lines = [
     "🌍 <b>GLOBAL PRICE</b>",
     "",
-    `🛒 <b>${escapeHtml(product)}</b>`,
+    `🛒 <b>${escapeHtml(
+      product
+    )}</b>`,
     ""
   ];
 
 
-  for (const item of validPrices) {
+  for (
+    const item
+    of validPrices
+  ) {
 
     lines.push(
-      `${escapeHtml(item.flag || "🌎")} ` +
-      `<b>${escapeHtml(item.country)}</b> — ` +
-      `$${Number(item.price).toLocaleString()}`
+      `${escapeHtml(
+        item.flag || "🌎"
+      )} <b>${escapeHtml(
+        item.country
+      )}</b> — $${Number(
+        item.price
+      ).toLocaleString()}`
     );
   }
 
@@ -544,15 +777,25 @@ async function publishPriceComparison(
     `🏆 <b>CHEAPEST:</b> ${escapeHtml(
       cheapest.country
     )}`,
-    `💰 <b>Price:</b> $${Number(
+    `💰 <b>PRICE:</b> $${Number(
       cheapest.price
     ).toLocaleString()}`,
-    `📅 <b>Checked:</b> ${escapeHtml(
-      checkedDate || new Date().toISOString().slice(0, 10)
+    `📅 <b>CHECKED:</b> ${escapeHtml(
+      checkedDate ||
+      new Date()
+        .toISOString()
+        .slice(0, 10)
     )}`,
-    `🔎 <b>Source:</b> ${escapeHtml(
-      source || "Verified source"
-    )}`,
+    source
+      ? `🔎 <b>SOURCE:</b> ${escapeHtml(
+          source
+        )}`
+      : "",
+    validUrl(sourceUrl)
+      ? `🔗 <a href="${escapeHtml(
+          sourceUrl
+        )}">View source</a>`
+      : "",
     "",
     "#GlobalPulse #GlobalPrice"
   );
@@ -560,7 +803,9 @@ async function publishPriceComparison(
 
   return sendHtmlMessage(
     env,
-    lines.join("\n")
+    lines
+      .filter(Boolean)
+      .join("\n")
   );
 }
 
@@ -571,39 +816,63 @@ async function publishPriceComparison(
 
 async function publishCountryBattle(
   env,
-  {
-    title,
-    items,
-    winner,
-    source
-  }
+  body
 ) {
+
+  const {
+    title = "",
+    items = [],
+    winner = "",
+    source = "",
+    sourceUrl = ""
+  } = body || {};
+
 
   if (
     !title ||
     !Array.isArray(items) ||
     !items.length
   ) {
+
     throw new Error(
       "Invalid country battle data"
     );
   }
 
 
-  const blocked =
-    items.some(item =>
-      containsBlockedContent(
-        `${item.country || ""} ${item.value || ""}`
-      )
-    );
-
-
-  if (blocked) {
+  if (
+    containsBlockedContent(
+      `${title} ${winner} ${source}`
+    )
+  ) {
 
     return {
       ok: false,
       skipped: true,
-      reason: "blocked-country"
+      reason:
+        "blocked-content"
+    };
+  }
+
+
+  const safeItems =
+    items.filter(
+      item =>
+        item &&
+        item.country &&
+        !containsBlockedContent(
+          `${item.country} ${item.value || ""}`
+        )
+    );
+
+
+  if (!safeItems.length) {
+
+    return {
+      ok: false,
+      skipped: true,
+      reason:
+        "no-allowed-countries"
     };
   }
 
@@ -611,17 +880,26 @@ async function publishCountryBattle(
   const lines = [
     "🌍 <b>COUNTRY BATTLE</b>",
     "",
-    `⚔️ <b>${escapeHtml(title)}</b>`,
+    `⚔️ <b>${escapeHtml(
+      title
+    )}</b>`,
     ""
   ];
 
 
-  for (const item of items) {
+  for (
+    const item
+    of safeItems
+  ) {
 
     lines.push(
-      `${escapeHtml(item.flag || "🌎")} ` +
-      `<b>${escapeHtml(item.country)}</b> — ` +
-      `${escapeHtml(item.value)}`
+      `${escapeHtml(
+        item.flag || "🌎"
+      )} <b>${escapeHtml(
+        item.country
+      )}</b> — ${escapeHtml(
+        item.value
+      )}`
     );
   }
 
@@ -630,16 +908,25 @@ async function publishCountryBattle(
 
     lines.push(
       "",
-      `🏆 <b>WINNER:</b> ${escapeHtml(winner)}`
+      `🏆 <b>WINNER:</b> ${escapeHtml(
+        winner
+      )}`
     );
   }
 
 
   lines.push(
     "",
-    `🔎 <b>Source:</b> ${escapeHtml(
-      source || "Verified source"
-    )}`,
+    source
+      ? `🔎 <b>SOURCE:</b> ${escapeHtml(
+          source
+        )}`
+      : "",
+    validUrl(sourceUrl)
+      ? `🔗 <a href="${escapeHtml(
+          sourceUrl
+        )}">View source</a>`
+      : "",
     "",
     "#GlobalPulse #CountryBattle"
   );
@@ -647,7 +934,9 @@ async function publishCountryBattle(
 
   return sendHtmlMessage(
     env,
-    lines.join("\n")
+    lines
+      .filter(Boolean)
+      .join("\n")
   );
 }
 
@@ -658,36 +947,56 @@ async function publishCountryBattle(
 
 async function publishTrend(
   env,
-  {
-    title,
-    topic,
-    countries,
-    growth,
-    why,
-    source
-  }
+  body
 ) {
+
+  const {
+    title = "",
+    topic = "",
+    countries = [],
+    growth = "",
+    why = "",
+    source = "",
+    sourceUrl = ""
+  } = body || {};
+
 
   if (
     containsBlockedContent(
-      `${title} ${topic} ${why} ${countries?.join(" ")}`
+      `${title} ${topic} ${why} ${source}`
     )
   ) {
 
     return {
       ok: false,
       skipped: true,
-      reason: "blocked-content"
+      reason:
+        "blocked-content"
     };
   }
 
 
-  const countryText =
+  const safeCountries =
     Array.isArray(countries)
-      ? countries
+      ? countries.filter(
+          item =>
+            !containsBlockedContent(
+              typeof item === "string"
+                ? item
+                : `${item.name || ""}`
+            )
+        )
+      : [];
+
+
+  const countryText =
+    safeCountries.length
+      ? safeCountries
           .map(
             item =>
-              `${item.flag || "🌎"} ${item.name || item}`
+              `${item.flag || "🌎"} ${
+                item.name || item
+              }`
           )
           .join(" · ")
       : "";
@@ -696,22 +1005,129 @@ async function publishTrend(
   const post = [
     "🔥 <b>GLOBAL TREND</b>",
     "",
-    `📈 <b>${escapeHtml(title || topic)}</b>`,
+    `📈 <b>${escapeHtml(
+      title || topic
+    )}</b>`,
     "",
     countryText
-      ? `🌍 <b>Top markets:</b>\n${escapeHtml(countryText)}`
+      ? `🌍 <b>Top markets:</b>\n${escapeHtml(
+          countryText
+        )}`
       : "",
     growth
-      ? `📊 <b>Growth:</b> ${escapeHtml(growth)}`
+      ? `📊 <b>Growth:</b> ${escapeHtml(
+          growth
+        )}`
       : "",
     "",
-    `💡 <b>Why it matters</b>\n${escapeHtml(why || "")}`,
+    why
+      ? `💡 <b>Why it matters</b>\n${escapeHtml(
+          why
+        )}`
+      : "",
     "",
-    `🔎 <b>Source:</b> ${escapeHtml(
-      source || "Verified source"
-    )}`,
+    source
+      ? `🔎 <b>Source:</b> ${escapeHtml(
+          source
+        )}`
+      : "",
+    validUrl(sourceUrl)
+      ? `🔗 <a href="${escapeHtml(
+          sourceUrl
+        )}">View source</a>`
+      : "",
     "",
     "#GlobalPulse #GlobalTrend"
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+
+  return sendHtmlMessage(
+    env,
+    post
+  );
+}
+
+
+/* =========================================================
+   COST OF LIVING
+   ========================================================= */
+
+async function publishCostOfLiving(
+  env,
+  body
+) {
+
+  const {
+    city = "",
+    country = "",
+    rent = "",
+    food = "",
+    transport = "",
+    total = "",
+    source = "",
+    sourceUrl = ""
+  } = body || {};
+
+
+  if (
+    containsBlockedContent(
+      `${city} ${country} ${source}`
+    )
+  ) {
+
+    return {
+      ok: false,
+      skipped: true,
+      reason:
+        "blocked-content"
+    };
+  }
+
+
+  const post = [
+    "🏠 <b>COST OF LIVING</b>",
+    "",
+    `📍 <b>${escapeHtml(
+      city
+    )}, ${escapeHtml(
+      country
+    )}</b>`,
+    "",
+    rent
+      ? `🏠 Rent: ${escapeHtml(
+          rent
+        )}`
+      : "",
+    food
+      ? `🍽️ Food: ${escapeHtml(
+          food
+        )}`
+      : "",
+    transport
+      ? `🚇 Transport: ${escapeHtml(
+          transport
+        )}`
+      : "",
+    total
+      ? `💰 Estimated monthly total: ${escapeHtml(
+          total
+        )}`
+      : "",
+    "",
+    source
+      ? `🔎 <b>Source:</b> ${escapeHtml(
+          source
+        )}`
+      : "",
+    validUrl(sourceUrl)
+      ? `🔗 <a href="${escapeHtml(
+          sourceUrl
+        )}">View source</a>`
+      : "",
+    "",
+    "#GlobalPulse #CostOfLiving"
   ]
     .filter(Boolean)
     .join("\n");
@@ -738,6 +1154,7 @@ async function publishCustom(
     body.message ||
     "";
 
+
   if (!text) {
 
     throw new Error(
@@ -753,7 +1170,8 @@ async function publishCustom(
     return {
       ok: false,
       skipped: true,
-      reason: "blocked-content"
+      reason:
+        "blocked-content"
     };
   }
 
@@ -766,10 +1184,12 @@ async function publishCustom(
 
 
 /* =========================================================
-   REQUEST JSON
+   READ JSON
    ========================================================= */
 
-async function readJson(request) {
+async function readJson(
+  request
+) {
 
   try {
 
@@ -783,19 +1203,100 @@ async function readJson(request) {
 
 
 /* =========================================================
-   MAIN
+   HEALTH RESPONSE
+   ========================================================= */
+
+function health(env) {
+
+  return {
+    ok: true,
+
+    service:
+      CONFIG.SERVICE,
+
+    worker:
+      CONFIG.WORKER,
+
+    status:
+      "online",
+
+    time:
+      new Date().toISOString(),
+
+    telegram: {
+
+      telegram_bot_token:
+        !!env.TELEGRAM_BOT_TOKEN,
+
+      telegram_channel_id:
+        !!env.TELEGRAM_CHANNEL_ID,
+
+      channel_id:
+        env.TELEGRAM_CHANNEL_ID ||
+        null
+    },
+
+    features: {
+
+      global_news:
+        true,
+
+      full_news:
+        true,
+
+      image_posts:
+        true,
+
+      global_price:
+        true,
+
+      country_battle:
+        true,
+
+      global_trend:
+        true,
+
+      cost_of_living:
+        true,
+
+      iran_filter:
+        true,
+
+      duplicate_filter:
+        true,
+
+      kv_required:
+        false,
+
+      ai:
+        false,
+
+      scheduler:
+        false
+    },
+
+    note:
+      "News collection, AI processing and scheduling can be connected to this Worker."
+  };
+}
+
+
+/* =========================================================
+   MAIN WORKER
    ========================================================= */
 
 export default {
 
-  async fetch(request, env) {
+  async fetch(
+    request,
+    env
+  ) {
 
     const url =
       new URL(request.url);
 
 
     try {
-
 
       /* =====================================================
          HEALTH
@@ -806,64 +1307,14 @@ export default {
         url.pathname === "/"
       ) {
 
-        return json({
-
-          ok: true,
-
-          service:
-            CONFIG.SERVICE,
-
-          worker:
-            CONFIG.WORKER,
-
-          status:
-            "online",
-
-          time:
-            new Date().toISOString(),
-
-          telegram: {
-
-            telegram_bot_token:
-              !!env.TELEGRAM_BOT_TOKEN,
-
-            telegram_channel_id:
-              !!env.TELEGRAM_CHANNEL_ID,
-
-            channel_id:
-              env.TELEGRAM_CHANNEL_ID || null
-          },
-
-          features: {
-
-            news:
-              true,
-
-            price:
-              true,
-
-            country_battle:
-              true,
-
-            trends:
-              true,
-
-            iran_filter:
-              true,
-
-            duplicate_filter:
-              !!env.GLOBAL_PULSE_KV,
-
-            image_posts:
-              true
-          }
-
-        });
+        return json(
+          health(env)
+        );
       }
 
 
       /* =====================================================
-         DEBUG ENV
+         DEBUG
       ===================================================== */
 
       if (
@@ -882,13 +1333,19 @@ export default {
             !!env.TELEGRAM_CHANNEL_ID,
 
           channel_id:
-            env.TELEGRAM_CHANNEL_ID || null,
+            env.TELEGRAM_CHANNEL_ID ||
+            null,
 
-          kv:
-            !!env.GLOBAL_PULSE_KV,
+          duplicate_memory:
+            recentNews.size,
 
           env_keys:
             Object.keys(env)
+              .filter(
+                key =>
+                  key !==
+                  "TELEGRAM_BOT_TOKEN"
+              )
         });
       }
 
@@ -924,7 +1381,7 @@ export default {
 
 
       /* =====================================================
-         TEST CHANNEL
+         CHANNEL TEST
       ===================================================== */
 
       if (
@@ -979,7 +1436,9 @@ export default {
       ) {
 
         const body =
-          await readJson(request);
+          await readJson(
+            request
+          );
 
 
         const result =
@@ -1008,7 +1467,9 @@ export default {
       ) {
 
         const body =
-          await readJson(request);
+          await readJson(
+            request
+          );
 
 
         const html =
@@ -1051,7 +1512,7 @@ export default {
 
 
       /* =====================================================
-         SEND NEWS
+         NEWS
          POST /publish-news
       ===================================================== */
 
@@ -1061,7 +1522,9 @@ export default {
       ) {
 
         const body =
-          await readJson(request);
+          await readJson(
+            request
+          );
 
 
         const result =
@@ -1071,12 +1534,14 @@ export default {
           );
 
 
-        return json(result);
+        return json(
+          result
+        );
       }
 
 
       /* =====================================================
-         GLOBAL PRICE
+         PRICE
          POST /publish-price
       ===================================================== */
 
@@ -1086,7 +1551,9 @@ export default {
       ) {
 
         const body =
-          await readJson(request);
+          await readJson(
+            request
+          );
 
 
         const result =
@@ -1116,11 +1583,14 @@ export default {
 
       if (
         request.method === "POST" &&
-        url.pathname === "/publish-country-battle"
+        url.pathname ===
+          "/publish-country-battle"
       ) {
 
         const body =
-          await readJson(request);
+          await readJson(
+            request
+          );
 
 
         const result =
@@ -1130,7 +1600,9 @@ export default {
           );
 
 
-        return json(result);
+        return json(
+          result
+        );
       }
 
 
@@ -1141,11 +1613,14 @@ export default {
 
       if (
         request.method === "POST" &&
-        url.pathname === "/publish-trend"
+        url.pathname ===
+          "/publish-trend"
       ) {
 
         const body =
-          await readJson(request);
+          await readJson(
+            request
+          );
 
 
         const result =
@@ -1155,17 +1630,50 @@ export default {
           );
 
 
-        return json(result);
+        return json(
+          result
+        );
       }
 
 
       /* =====================================================
-         WEBHOOK
+         COST OF LIVING
+         POST /publish-cost
       ===================================================== */
 
       if (
         request.method === "POST" &&
-        url.pathname === "/telegram-webhook"
+        url.pathname ===
+          "/publish-cost"
+      ) {
+
+        const body =
+          await readJson(
+            request
+          );
+
+
+        const result =
+          await publishCostOfLiving(
+            env,
+            body
+          );
+
+
+        return json(
+          result
+        );
+      }
+
+
+      /* =====================================================
+         TELEGRAM WEBHOOK
+      ===================================================== */
+
+      if (
+        request.method === "POST" &&
+        url.pathname ===
+          "/telegram-webhook"
       ) {
 
         const update =
@@ -1198,7 +1706,8 @@ export default {
         {
           ok: false,
           error: "Not Found",
-          path: url.pathname
+          path:
+            url.pathname
         },
         404
       );
@@ -1208,12 +1717,14 @@ export default {
 
       console.error(
         JSON.stringify({
+
           error:
             error.message ||
             String(error),
 
           path:
             url.pathname
+
         })
       );
 
@@ -1224,7 +1735,10 @@ export default {
 
           error:
             error.message ||
-            String(error)
+            String(error),
+
+          path:
+            url.pathname
         },
         500
       );
