@@ -53,6 +53,24 @@ export default {
     const url = new URL(request.url);
 
     try {
+
+      /* =========================
+         پیدا کردن آیدی کانال
+      ========================= */
+
+      if (url.pathname === "/find-channel") {
+        const updates = await telegram(env, "getUpdates");
+
+        return json({
+          ok: true,
+          updates: updates.result || []
+        });
+      }
+
+      /* =========================
+         وضعیت Worker
+      ========================= */
+
       if (url.pathname === "/") {
         return json({
           ok: true,
@@ -63,6 +81,10 @@ export default {
         });
       }
 
+      /* =========================
+         تست ربات
+      ========================= */
+
       if (url.pathname === "/test-telegram") {
         const me = await telegram(env, "getMe");
 
@@ -72,6 +94,10 @@ export default {
           channel_id: env.TELEGRAM_CHANNEL_ID || null
         });
       }
+
+      /* =========================
+         تست ارسال به کانال
+      ========================= */
 
       if (url.pathname === "/test-channel") {
         const message =
@@ -88,6 +114,10 @@ export default {
           channel_id: env.TELEGRAM_CHANNEL_ID
         });
       }
+
+      /* =========================
+         Telegram Webhook
+      ========================= */
 
       if (
         request.method === "POST" &&
@@ -106,6 +136,10 @@ export default {
           ok: true
         });
       }
+
+      /* =========================
+         Not Found
+      ========================= */
 
       return json(
         {
