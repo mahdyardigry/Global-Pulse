@@ -1,9 +1,32 @@
 const BYBIT = "https://api.bybit.com";
-const VERSION = "GLOBAL-PULSE-CRYPTO-DEEP-V1";
+const VERSION = "GLOBAL-PULSE-CRYPTO-DEEP-V2";
 
 const KLINE_LIMIT = 200;
 const TRADE_LIMIT = 1000;
 const ORDERBOOK_LIMIT = 50;
+
+/* =========================================================
+   TIMEFRAMES
+   3D عمداً حذف شده است.
+   Worker هرکدام را تست می‌کند و فقط تایم‌فریم‌های موجود
+   در Bybit را نگه می‌دارد.
+========================================================= */
+
+const TIMEFRAMES = [
+  { interval: "1",   key: "1m",  label: "1 دقیقه",   minutes: 1 },
+  { interval: "3",   key: "3m",  label: "3 دقیقه",   minutes: 3 },
+  { interval: "5",   key: "5m",  label: "5 دقیقه",   minutes: 5 },
+  { interval: "15",  key: "15m", label: "15 دقیقه",  minutes: 15 },
+  { interval: "30",  key: "30m", label: "30 دقیقه",  minutes: 30 },
+  { interval: "60",  key: "1h",  label: "1 ساعت",    minutes: 60 },
+  { interval: "120", key: "2h",  label: "2 ساعت",    minutes: 120 },
+  { interval: "240", key: "4h",  label: "4 ساعت",    minutes: 240 },
+  { interval: "360", key: "6h",  label: "6 ساعت",    minutes: 360 },
+  { interval: "720", key: "12h", label: "12 ساعت",   minutes: 720 },
+  { interval: "D",   key: "1d",  label: "1 روز",     minutes: 1440 },
+  { interval: "W",   key: "1w",  label: "1 هفته",    minutes: 10080 },
+  { interval: "M",   key: "1mo", label: "1 ماه",     minutes: 43200 }
+];
 
 const BLOCKED = [
   "iran",
@@ -53,50 +76,85 @@ function upper(v) {
 
 function blocked(text) {
   const s = clean(text).toLowerCase();
-  return BLOCKED.some(x => s.includes(x.toLowerCase()));
+
+  return BLOCKED.some(
+    x => s.includes(x.toLowerCase())
+  );
 }
 
 function avg(arr) {
   if (!arr.length) return 0;
-  return arr.reduce((a, b) => a + b, 0) / arr.length;
+
+  return arr.reduce(
+    (a, b) => a + b,
+    0
+  ) / arr.length;
 }
 
 function median(arr) {
   if (!arr.length) return 0;
-  const a = [...arr].sort((x, y) => x - y);
-  const m = Math.floor(a.length / 2);
-  return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
+
+  const a =
+    [...arr].sort(
+      (x, y) => x - y
+    );
+
+  const m =
+    Math.floor(a.length / 2);
+
+  return a.length % 2
+    ? a[m]
+    : (a[m - 1] + a[m]) / 2;
 }
 
 function pct(a, b) {
   if (!b) return 0;
+
   return ((a - b) / b) * 100;
 }
 
 function round(v, d = 2) {
-  const p = Math.pow(10, d);
-  return Math.round(v * p) / p;
+  if (v === null || v === undefined) {
+    return null;
+  }
+
+  const p =
+    Math.pow(10, d);
+
+  return Math.round(
+    num(v) * p
+  ) / p;
 }
 
 function formatPrice(v) {
   const n = num(v);
+
   if (!n) return "0";
 
   if (n >= 1000) {
-    return n.toLocaleString("en-US", {
-      maximumFractionDigits: 2
-    });
+    return n.toLocaleString(
+      "en-US",
+      {
+        maximumFractionDigits: 2
+      }
+    );
   }
 
   if (n >= 1) {
-    return n.toLocaleString("en-US", {
-      maximumFractionDigits: 4
-    });
+    return n.toLocaleString(
+      "en-US",
+      {
+        maximumFractionDigits: 4
+      }
+    );
   }
 
-  return n.toLocaleString("en-US", {
-    maximumFractionDigits: 8
-  });
+  return n.toLocaleString(
+    "en-US",
+    {
+      maximumFractionDigits: 8
+    }
+  );
 }
 
 /* =========================================================
@@ -104,31 +162,56 @@ function formatPrice(v) {
 ========================================================= */
 
 async function bybit(path, params = {}) {
-  const qs = new URLSearchParams();
 
-  for (const [k, v] of Object.entries(params)) {
-    if (v !== undefined && v !== null && v !== "") {
-      qs.set(k, String(v));
+  const qs =
+    new URLSearchParams();
+
+  for (
+    const [k, v]
+    of Object.entries(params)
+  ) {
+
+    if (
+      v !== undefined &&
+      v !== null &&
+      v !== ""
+    ) {
+      qs.set(
+        k,
+        String(v)
+      );
     }
   }
 
-  const url = `${BYBIT}${path}?${qs.toString()}`;
+  const url =
+    `${BYBIT}${path}?${qs.toString()}`;
 
-  const r = await fetch(url, {
-    headers: {
-      "accept": "application/json"
-    }
-  });
+  const r =
+    await fetch(
+      url,
+      {
+        headers: {
+          "accept":
+            "application/json"
+        }
+      }
+    );
 
   if (!r.ok) {
-    throw new Error(`Bybit HTTP ${r.status}`);
+    throw new Error(
+      `Bybit HTTP ${r.status}`
+    );
   }
 
-  const data = await r.json();
+  const data =
+    await r.json();
 
   if (data.retCode !== 0) {
     throw new Error(
-      `Bybit ${data.retCode}: ${data.retMsg || "API error"}`
+      `Bybit ${data.retCode}: ${
+        data.retMsg ||
+        "API error"
+      }`
     );
   }
 
@@ -138,80 +221,99 @@ async function bybit(path, params = {}) {
 /* =========================================================
    FIND SYMBOL
    Futures first.
-   No user category selection.
 ========================================================= */
 
 async function findSymbol(input) {
-  let symbol = upper(input);
 
-  symbol = symbol
-    .replace(/\s+/g, "")
-    .replace(/[-_/]/g, "");
+  let symbol =
+    upper(input);
+
+  symbol =
+    symbol
+      .replace(/\s+/g, "")
+      .replace(/[-_/]/g, "");
 
   if (!symbol.endsWith("USDT")) {
     symbol += "USDT";
   }
 
-  /* ---------- LINEAR FUTURES ---------- */
+  /* ---------- LINEAR ---------- */
 
   try {
-    const result = await bybit(
-      "/v5/market/instruments-info",
-      {
-        category: "linear",
-        symbol
-      }
-    );
+
+    const result =
+      await bybit(
+        "/v5/market/instruments-info",
+        {
+          category: "linear",
+          symbol
+        }
+      );
 
     const item =
       result.list &&
       result.list.find(
-        x => upper(x.symbol) === symbol
+        x =>
+          upper(x.symbol) ===
+          symbol
       );
 
     if (item) {
+
       return {
         found: true,
         category: "linear",
         market: "Futures",
         symbol: item.symbol,
-        baseCoin: item.baseCoin || "",
-        quoteCoin: item.quoteCoin || "",
-        contractType: item.contractType || "",
+        baseCoin:
+          item.baseCoin || "",
+        quoteCoin:
+          item.quoteCoin || "",
+        contractType:
+          item.contractType || "",
         raw: item
       };
     }
+
   } catch (_) {}
 
   /* ---------- SPOT ---------- */
 
   try {
-    const result = await bybit(
-      "/v5/market/instruments-info",
-      {
-        category: "spot",
-        symbol
-      }
-    );
+
+    const result =
+      await bybit(
+        "/v5/market/instruments-info",
+        {
+          category: "spot",
+          symbol
+        }
+      );
 
     const item =
       result.list &&
       result.list.find(
-        x => upper(x.symbol) === symbol
+        x =>
+          upper(x.symbol) ===
+          symbol
       );
 
     if (item) {
+
       return {
         found: true,
         category: "spot",
         market: "Spot",
         symbol: item.symbol,
-        baseCoin: item.baseCoin || "",
-        quoteCoin: item.quoteCoin || "",
+        baseCoin:
+          item.baseCoin || "",
+        quoteCoin:
+          item.quoteCoin || "",
         contractType: "",
         raw: item
       };
     }
+
   } catch (_) {}
 
   return {
@@ -225,6 +327,7 @@ async function findSymbol(input) {
 ========================================================= */
 
 function parseKlines(list) {
+
   return (list || [])
     .map(x => ({
       time: num(x[0]),
@@ -238,18 +341,77 @@ function parseKlines(list) {
     .reverse();
 }
 
-async function getKlines(category, symbol, interval) {
-  const result = await bybit(
-    "/v5/market/kline",
-    {
-      category,
-      symbol,
-      interval,
-      limit: KLINE_LIMIT
-    }
-  );
+async function getKlines(
+  category,
+  symbol,
+  interval
+) {
 
-  return parseKlines(result.list);
+  const result =
+    await bybit(
+      "/v5/market/kline",
+      {
+        category,
+        symbol,
+        interval,
+        limit: KLINE_LIMIT
+      }
+    );
+
+  return parseKlines(
+    result.list
+  );
+}
+
+/* =========================================================
+   GET ALL AVAILABLE TIMEFRAMES
+========================================================= */
+
+async function getAvailableTimeframes(
+  category,
+  symbol
+) {
+
+  const results =
+    await Promise.all(
+      TIMEFRAMES.map(
+        async tf => {
+
+          try {
+
+            const candles =
+              await getKlines(
+                category,
+                symbol,
+                tf.interval
+              );
+
+            if (
+              candles &&
+              candles.length >= 30
+            ) {
+
+              return {
+                ...tf,
+                available: true,
+                candles
+              };
+            }
+
+          } catch (_) {}
+
+          return {
+            ...tf,
+            available: false,
+            candles: []
+          };
+        }
+      )
+    );
+
+  return results.filter(
+    x => x.available
+  );
 }
 
 /* =========================================================
@@ -257,22 +419,45 @@ async function getKlines(category, symbol, interval) {
 ========================================================= */
 
 function sma(values, period) {
-  if (values.length < period) return null;
+
+  if (
+    values.length < period
+  ) {
+    return null;
+  }
 
   return avg(
-    values.slice(values.length - period)
+    values.slice(
+      values.length - period
+    )
   );
 }
 
 function ema(values, period) {
-  if (values.length < period) return null;
 
-  const k = 2 / (period + 1);
+  if (
+    values.length < period
+  ) {
+    return null;
+  }
+
+  const k =
+    2 / (period + 1);
 
   let e =
-    avg(values.slice(0, period));
+    avg(
+      values.slice(
+        0,
+        period
+      )
+    );
 
-  for (let i = period; i < values.length; i++) {
+  for (
+    let i = period;
+    i < values.length;
+    i++
+  ) {
+
     e =
       values[i] * k +
       e * (1 - k);
@@ -281,56 +466,125 @@ function ema(values, period) {
   return e;
 }
 
-function rsi(values, period = 14) {
-  if (values.length < period + 1) return null;
+function rsi(
+  values,
+  period = 14
+) {
+
+  if (
+    values.length <
+    period + 1
+  ) {
+    return null;
+  }
 
   let gain = 0;
   let loss = 0;
 
-  for (let i = 1; i <= period; i++) {
-    const d = values[i] - values[i - 1];
+  for (
+    let i = 1;
+    i <= period;
+    i++
+  ) {
 
-    if (d >= 0) gain += d;
-    else loss -= d;
+    const d =
+      values[i] -
+      values[i - 1];
+
+    if (d >= 0) {
+      gain += d;
+    } else {
+      loss -= d;
+    }
   }
 
-  let avgGain = gain / period;
-  let avgLoss = loss / period;
+  let avgGain =
+    gain / period;
 
-  for (let i = period + 1; i < values.length; i++) {
-    const d = values[i] - values[i - 1];
+  let avgLoss =
+    loss / period;
 
-    const g = Math.max(d, 0);
-    const l = Math.max(-d, 0);
+  for (
+    let i = period + 1;
+    i < values.length;
+    i++
+  ) {
+
+    const d =
+      values[i] -
+      values[i - 1];
+
+    const g =
+      Math.max(d, 0);
+
+    const l =
+      Math.max(-d, 0);
 
     avgGain =
-      ((avgGain * (period - 1)) + g) / period;
+      (
+        avgGain *
+        (period - 1) +
+        g
+      ) / period;
 
     avgLoss =
-      ((avgLoss * (period - 1)) + l) / period;
+      (
+        avgLoss *
+        (period - 1) +
+        l
+      ) / period;
   }
 
-  if (avgLoss === 0) return 100;
+  if (avgLoss === 0) {
+    return 100;
+  }
 
-  const rs = avgGain / avgLoss;
+  const rs =
+    avgGain / avgLoss;
 
-  return 100 - 100 / (1 + rs);
+  return (
+    100 -
+    100 / (1 + rs)
+  );
 }
 
-function atr(candles, period = 14) {
-  if (candles.length < period + 1) return null;
+function atr(
+  candles,
+  period = 14
+) {
+
+  if (
+    candles.length <
+    period + 1
+  ) {
+    return null;
+  }
 
   const tr = [];
 
-  for (let i = 1; i < candles.length; i++) {
-    const c = candles[i];
-    const p = candles[i - 1];
+  for (
+    let i = 1;
+    i < candles.length;
+    i++
+  ) {
+
+    const c =
+      candles[i];
+
+    const p =
+      candles[i - 1];
 
     tr.push(
       Math.max(
         c.high - c.low,
-        Math.abs(c.high - p.close),
-        Math.abs(c.low - p.close)
+        Math.abs(
+          c.high -
+          p.close
+        ),
+        Math.abs(
+          c.low -
+          p.close
+        )
       )
     );
   }
@@ -341,42 +595,75 @@ function atr(candles, period = 14) {
 }
 
 function macd(values) {
-  if (values.length < 35) return null;
 
-  const fast = ema(values, 12);
-  const slow = ema(values, 26);
+  if (
+    values.length < 35
+  ) {
+    return null;
+  }
 
-  if (fast === null || slow === null) {
+  const fast =
+    ema(values, 12);
+
+  const slow =
+    ema(values, 26);
+
+  if (
+    fast === null ||
+    slow === null
+  ) {
     return null;
   }
 
   return fast - slow;
 }
 
-function bollinger(values, period = 20) {
-  if (values.length < period) return null;
+function bollinger(
+  values,
+  period = 20
+) {
+
+  if (
+    values.length < period
+  ) {
+    return null;
+  }
 
   const data =
     values.slice(-period);
 
-  const mean = avg(data);
+  const mean =
+    avg(data);
 
   const variance =
     avg(
-      data.map(x =>
-        Math.pow(x - mean, 2)
+      data.map(
+        x =>
+          Math.pow(
+            x - mean,
+            2
+          )
       )
     );
 
-  const sd = Math.sqrt(variance);
+  const sd =
+    Math.sqrt(
+      variance
+    );
 
   return {
     middle: mean,
-    upper: mean + sd * 2,
-    lower: mean - sd * 2,
-    width: mean
-      ? ((sd * 4) / mean) * 100
-      : 0
+    upper:
+      mean + sd * 2,
+    lower:
+      mean - sd * 2,
+    width:
+      mean
+        ? (
+            sd * 4 /
+            mean
+          ) * 100
+        : 0
   };
 }
 
@@ -384,12 +671,19 @@ function bollinger(values, period = 20) {
    TREND
 ========================================================= */
 
-function trendAnalysis(candles) {
+function trendAnalysis(
+  candles
+) {
+
   const closes =
-    candles.map(x => x.close);
+    candles.map(
+      x => x.close
+    );
 
   const price =
-    closes[closes.length - 1];
+    closes[
+      closes.length - 1
+    ];
 
   const ma20 =
     sma(closes, 20);
@@ -400,27 +694,52 @@ function trendAnalysis(candles) {
   const ma100 =
     sma(closes, 100);
 
-  let direction = "NEUTRAL";
+  let direction =
+    "NEUTRAL";
+
   let score = 50;
 
-  if (ma20 && ma50) {
+  if (
+    ma20 !== null &&
+    ma50 !== null
+  ) {
+
     if (
       price > ma20 &&
       ma20 > ma50
     ) {
-      direction = "BULLISH";
+
+      direction =
+        "BULLISH";
+
       score = 80;
+
     } else if (
       price < ma20 &&
       ma20 < ma50
     ) {
-      direction = "BEARISH";
+
+      direction =
+        "BEARISH";
+
       score = 20;
-    } else if (price > ma20) {
-      direction = "BULLISH";
+
+    } else if (
+      price > ma20
+    ) {
+
+      direction =
+        "BULLISH";
+
       score = 65;
-    } else if (price < ma20) {
-      direction = "BEARISH";
+
+    } else if (
+      price < ma20
+    ) {
+
+      direction =
+        "BEARISH";
+
       score = 35;
     }
   }
@@ -439,8 +758,14 @@ function trendAnalysis(candles) {
    SUPPORT / RESISTANCE
 ========================================================= */
 
-function supportResistance(candles) {
-  if (candles.length < 30) {
+function supportResistance(
+  candles
+) {
+
+  if (
+    candles.length < 30
+  ) {
+
     return {
       supports: [],
       resistances: []
@@ -448,19 +773,30 @@ function supportResistance(candles) {
   }
 
   const highs =
-    candles.map(x => x.high);
+    candles.map(
+      x => x.high
+    );
 
   const lows =
-    candles.map(x => x.low);
+    candles.map(
+      x => x.low
+    );
 
   const price =
-    candles[candles.length - 1].close;
+    candles[
+      candles.length - 1
+    ].close;
 
   const levels = [];
 
-  for (let i = 2; i < candles.length - 2; i++) {
+  for (
+    let i = 2;
+    i < candles.length - 2;
+    i++
+  ) {
 
-    const h = highs[i];
+    const h =
+      highs[i];
 
     if (
       h >= highs[i - 1] &&
@@ -468,13 +804,16 @@ function supportResistance(candles) {
       h >= highs[i + 1] &&
       h >= highs[i + 2]
     ) {
+
       levels.push({
         price: h,
-        type: "resistance"
+        type:
+          "resistance"
       });
     }
 
-    const l = lows[i];
+    const l =
+      lows[i];
 
     if (
       l <= lows[i - 1] &&
@@ -482,6 +821,7 @@ function supportResistance(candles) {
       l <= lows[i + 1] &&
       l <= lows[i + 2]
     ) {
+
       levels.push({
         price: l,
         type: "support"
@@ -491,23 +831,45 @@ function supportResistance(candles) {
 
   const supports =
     levels
-      .filter(x => x.type === "support")
-      .filter(x => x.price < price)
+      .filter(
+        x =>
+          x.type ===
+          "support"
+      )
+      .filter(
+        x =>
+          x.price < price
+      )
       .sort(
         (a, b) =>
-          Math.abs(price - a.price) -
-          Math.abs(price - b.price)
+          Math.abs(
+            price - a.price
+          ) -
+          Math.abs(
+            price - b.price
+          )
       )
       .slice(0, 5);
 
   const resistances =
     levels
-      .filter(x => x.type === "resistance")
-      .filter(x => x.price > price)
+      .filter(
+        x =>
+          x.type ===
+          "resistance"
+      )
+      .filter(
+        x =>
+          x.price > price
+      )
       .sort(
         (a, b) =>
-          Math.abs(price - a.price) -
-          Math.abs(price - b.price)
+          Math.abs(
+            price - a.price
+          ) -
+          Math.abs(
+            price - b.price
+          )
       )
       .slice(0, 5);
 
@@ -518,55 +880,85 @@ function supportResistance(candles) {
 }
 
 /* =========================================================
-   LIQUIDITY / HUNT
+   LIQUIDITY HUNT
 ========================================================= */
 
-function liquidityHunt(candles) {
-  if (candles.length < 20) {
+function liquidityHunt(
+  candles
+) {
+
+  if (
+    candles.length < 20
+  ) {
+
     return {
       detected: false,
       type: "NONE",
-      reason: "Insufficient data"
+      reason:
+        "Insufficient data"
     };
   }
 
   const current =
-    candles[candles.length - 1];
+    candles[
+      candles.length - 1
+    ];
 
   const previous =
-    candles.slice(-20, -1);
+    candles.slice(
+      -20,
+      -1
+    );
 
   const previousHigh =
-    Math.max(...previous.map(x => x.high));
+    Math.max(
+      ...previous.map(
+        x => x.high
+      )
+    );
 
   const previousLow =
-    Math.min(...previous.map(x => x.low));
+    Math.min(
+      ...previous.map(
+        x => x.low
+      )
+    );
 
   const bullishSweep =
-    current.low < previousLow &&
-    current.close > previousLow;
+    current.low <
+      previousLow &&
+    current.close >
+      previousLow;
 
   const bearishSweep =
-    current.high > previousHigh &&
-    current.close < previousHigh;
+    current.high >
+      previousHigh &&
+    current.close <
+      previousHigh;
 
   if (bullishSweep) {
+
     return {
       detected: true,
-      type: "BULLISH LIQUIDITY SWEEP",
+      type:
+        "BULLISH LIQUIDITY SWEEP",
       reason:
         "Price swept the previous low and closed back above it.",
-      level: previousLow
+      level:
+        previousLow
     };
   }
 
   if (bearishSweep) {
+
     return {
       detected: true,
-      type: "BEARISH LIQUIDITY SWEEP",
+      type:
+        "BEARISH LIQUIDITY SWEEP",
       reason:
         "Price swept the previous high and closed back below it.",
-      level: previousHigh
+      level:
+        previousHigh
     };
   }
 
@@ -582,7 +974,10 @@ function liquidityHunt(candles) {
    FOOTPRINT
 ========================================================= */
 
-async function footprint(category, symbol) {
+async function footprint(
+  category,
+  symbol
+) {
 
   const result =
     await bybit(
@@ -590,7 +985,8 @@ async function footprint(category, symbol) {
       {
         category,
         symbol,
-        limit: TRADE_LIMIT
+        limit:
+          TRADE_LIMIT
       }
     );
 
@@ -605,37 +1001,55 @@ async function footprint(category, symbol) {
 
   const notionals = [];
 
-  for (const t of trades) {
+  for (
+    const t of trades
+  ) {
 
-    const qty = num(t.size);
-    const price = num(t.price);
+    const qty =
+      num(t.size);
+
+    const price =
+      num(t.price);
 
     const notional =
       qty * price;
 
-    notionals.push(notional);
+    notionals.push(
+      notional
+    );
 
     if (
-      String(t.side).toLowerCase() ===
+      String(t.side)
+        .toLowerCase() ===
       "buy"
     ) {
+
       buyVolume += qty;
-      buyNotional += notional;
+      buyNotional +=
+        notional;
+
     } else {
+
       sellVolume += qty;
-      sellNotional += notional;
+      sellNotional +=
+        notional;
     }
   }
 
   const total =
-    buyVolume + sellVolume;
+    buyVolume +
+    sellVolume;
 
   const delta =
-    buyVolume - sellVolume;
+    buyVolume -
+    sellVolume;
 
   const deltaPercent =
     total
-      ? (delta / total) * 100
+      ? (
+          delta /
+          total
+        ) * 100
       : 0;
 
   const med =
@@ -647,46 +1061,75 @@ async function footprint(category, symbol) {
   let largeBuy = 0;
   let largeSell = 0;
 
-  for (const t of trades) {
+  for (
+    const t of trades
+  ) {
 
-    const qty = num(t.size);
-    const price = num(t.price);
+    const qty =
+      num(t.size);
 
-    const n = qty * price;
+    const price =
+      num(t.price);
 
-    if (n < largeThreshold) {
+    const n =
+      qty * price;
+
+    if (
+      n < largeThreshold
+    ) {
       continue;
     }
 
     if (
-      String(t.side).toLowerCase() ===
+      String(t.side)
+        .toLowerCase() ===
       "buy"
     ) {
+
       largeBuy += n;
+
     } else {
+
       largeSell += n;
     }
   }
 
-  let pressure = "NEUTRAL";
+  let pressure =
+    "NEUTRAL";
 
-  if (deltaPercent >= 10) {
-    pressure = "BUY PRESSURE";
-  } else if (deltaPercent <= -10) {
-    pressure = "SELL PRESSURE";
+  if (
+    deltaPercent >= 10
+  ) {
+
+    pressure =
+      "BUY PRESSURE";
+
+  } else if (
+    deltaPercent <= -10
+  ) {
+
+    pressure =
+      "SELL PRESSURE";
   }
 
   return {
-    trades: trades.length,
+    trades:
+      trades.length,
+
     buyVolume,
     sellVolume,
+
     buyNotional,
     sellNotional,
+
     delta,
     deltaPercent,
+
     largeBuy,
     largeSell,
+
     largeThreshold,
+
     pressure
   };
 }
@@ -695,7 +1138,10 @@ async function footprint(category, symbol) {
    ORDER BOOK
 ========================================================= */
 
-async function orderBook(category, symbol) {
+async function orderBook(
+  category,
+  symbol
+) {
 
   const result =
     await bybit(
@@ -703,7 +1149,8 @@ async function orderBook(category, symbol) {
       {
         category,
         symbol,
-        limit: ORDERBOOK_LIMIT
+        limit:
+          ORDERBOOK_LIMIT
       }
     );
 
@@ -716,72 +1163,126 @@ async function orderBook(category, symbol) {
   let bidLiquidity = 0;
   let askLiquidity = 0;
 
-  for (const b of bids) {
+  for (
+    const b of bids
+  ) {
+
     bidLiquidity +=
-      num(b[0]) * num(b[1]);
+      num(b[0]) *
+      num(b[1]);
   }
 
-  for (const a of asks) {
+  for (
+    const a of asks
+  ) {
+
     askLiquidity +=
-      num(a[0]) * num(a[1]);
+      num(a[0]) *
+      num(a[1]);
   }
 
   const total =
-    bidLiquidity + askLiquidity;
+    bidLiquidity +
+    askLiquidity;
 
   const buyShare =
     total
-      ? bidLiquidity / total * 100
+      ? (
+          bidLiquidity /
+          total
+        ) * 100
       : 50;
 
   const sellShare =
     total
-      ? askLiquidity / total * 100
+      ? (
+          askLiquidity /
+          total
+        ) * 100
       : 50;
 
-  let pressure = "NEUTRAL";
+  let pressure =
+    "NEUTRAL";
 
-  if (buyShare > sellShare + 8) {
-    pressure = "BUY PRESSURE";
-  } else if (
-    sellShare > buyShare + 8
+  if (
+    buyShare >
+    sellShare + 8
   ) {
-    pressure = "SELL PRESSURE";
+
+    pressure =
+      "BUY PRESSURE";
+
+  } else if (
+    sellShare >
+    buyShare + 8
+  ) {
+
+    pressure =
+      "SELL PRESSURE";
   }
 
   const buyWalls =
     bids
-      .map(x => ({
-        price: num(x[0]),
-        quantity: num(x[1]),
-        value:
-          num(x[0]) * num(x[1])
-      }))
-      .sort((a, b) => b.value - a.value)
+      .map(
+        x => ({
+          price:
+            num(x[0]),
+          quantity:
+            num(x[1]),
+          value:
+            num(x[0]) *
+            num(x[1])
+        })
+      )
+      .sort(
+        (a, b) =>
+          b.value -
+          a.value
+      )
       .slice(0, 5);
 
   const sellWalls =
     asks
-      .map(x => ({
-        price: num(x[0]),
-        quantity: num(x[1]),
-        value:
-          num(x[0]) * num(x[1])
-      }))
-      .sort((a, b) => b.value - a.value)
+      .map(
+        x => ({
+          price:
+            num(x[0]),
+          quantity:
+            num(x[1]),
+          value:
+            num(x[0]) *
+            num(x[1])
+        })
+      )
+      .sort(
+        (a, b) =>
+          b.value -
+          a.value
+      )
       .slice(0, 5);
 
   return {
     bidLiquidity,
     askLiquidity,
-    totalLiquidity: total,
+
+    totalLiquidity:
+      total,
+
     buyShare,
     sellShare,
+
     pressure,
+
     bestBid:
-      bids.length ? num(bids[0][0]) : 0,
+      bids.length
+        ? num(bids[0][0])
+        : 0,
+
     bestAsk:
-      asks.length ? num(asks[0][0]) : 0,
+      asks.length
+        ? num(asks[0][0])
+        : 0,
+
     buyWalls,
     sellWalls
   };
@@ -791,7 +1292,9 @@ async function orderBook(category, symbol) {
    FUTURES DATA
 ========================================================= */
 
-async function futuresData(symbol) {
+async function futuresData(
+  symbol
+) {
 
   const output = {
     available: true,
@@ -806,9 +1309,11 @@ async function futuresData(symbol) {
       await bybit(
         "/v5/market/open-interest",
         {
-          category: "linear",
+          category:
+            "linear",
           symbol,
-          intervalTime: "5min",
+          intervalTime:
+            "5min",
           limit: 50
         }
       );
@@ -840,7 +1345,8 @@ async function futuresData(symbol) {
       await bybit(
         "/v5/market/funding/history",
         {
-          category: "linear",
+          category:
+            "linear",
           symbol,
           limit: 1
         }
@@ -863,10 +1369,521 @@ async function futuresData(symbol) {
 }
 
 /* =========================================================
+   SINGLE TIMEFRAME ANALYSIS
+========================================================= */
+
+function analyzeTimeframe(
+  tf,
+  candles
+) {
+
+  const closes =
+    candles.map(
+      x => x.close
+    );
+
+  const trend =
+    trendAnalysis(
+      candles
+    );
+
+  const rsiValue =
+    rsi(
+      closes,
+      14
+    );
+
+  const macdValue =
+    macd(closes);
+
+  const atrValue =
+    atr(
+      candles,
+      14
+    );
+
+  const bollingerValue =
+    bollinger(
+      closes,
+      20
+    );
+
+  const levels =
+    supportResistance(
+      candles
+    );
+
+  const hunt =
+    liquidityHunt(
+      candles
+    );
+
+  let score =
+    trend.score;
+
+  const reasons = [];
+
+  if (
+    trend.direction ===
+    "BULLISH"
+  ) {
+
+    reasons.push(
+      "ساختار قیمت صعودی است."
+    );
+
+  } else if (
+    trend.direction ===
+    "BEARISH"
+  ) {
+
+    reasons.push(
+      "ساختار قیمت نزولی است."
+    );
+
+  } else {
+
+    reasons.push(
+      "ساختار این تایم‌فریم خنثی است."
+    );
+  }
+
+  if (
+    rsiValue !== null
+  ) {
+
+    if (
+      rsiValue >= 55
+    ) {
+
+      score += 8;
+
+      reasons.push(
+        "RSI از مومنتوم صعودی حمایت می‌کند."
+      );
+
+    } else if (
+      rsiValue <= 45
+    ) {
+
+      score -= 8;
+
+      reasons.push(
+        "RSI از مومنتوم نزولی حمایت می‌کند."
+      );
+    }
+  }
+
+  if (
+    macdValue !== null
+  ) {
+
+    if (
+      macdValue > 0
+    ) {
+
+      score += 6;
+
+      reasons.push(
+        "MACD بالای خط صفر است."
+      );
+
+    } else {
+
+      score -= 6;
+
+      reasons.push(
+        "MACD زیر خط صفر است."
+      );
+    }
+  }
+
+  if (
+    hunt.detected
+  ) {
+
+    if (
+      hunt.type.includes(
+        "BULLISH"
+      )
+    ) {
+
+      score += 10;
+
+      reasons.push(
+        "Liquidity Sweep صعودی مشاهده شد."
+      );
+
+    } else if (
+      hunt.type.includes(
+        "BEARISH"
+      )
+    ) {
+
+      score -= 10;
+
+      reasons.push(
+        "Liquidity Sweep نزولی مشاهده شد."
+      );
+    }
+  }
+
+  score =
+    Math.max(
+      0,
+      Math.min(
+        100,
+        score
+      )
+    );
+
+  let view =
+    "NEUTRAL";
+
+  if (
+    score >= 65
+  ) {
+
+    view =
+      "BULLISH";
+
+  } else if (
+    score <= 35
+  ) {
+
+    view =
+      "BEARISH";
+  }
+
+  return {
+    key: tf.key,
+    interval:
+      tf.interval,
+
+    label:
+      tf.label,
+
+    minutes:
+      tf.minutes,
+
+    candles:
+      candles.length,
+
+    price:
+      trend.price,
+
+    trend,
+
+    rsi:
+      rsiValue,
+
+    macd:
+      macdValue,
+
+    atr:
+      atrValue,
+
+    bollinger:
+      bollingerValue,
+
+    supportResistance:
+      levels,
+
+    liquidity: {
+      hunt
+    },
+
+    score:
+      round(score, 1),
+
+    view,
+
+    reasons
+  };
+}
+
+/* =========================================================
+   TIMEFRAME CHAT
+   تایم‌فریم‌ها با هم مقایسه می‌شوند.
+========================================================= */
+
+function timeframeDialogue(
+  analyses
+) {
+
+  if (!analyses.length) {
+
+    return {
+      messages: [],
+      bullishCount: 0,
+      bearishCount: 0,
+      neutralCount: 0,
+      consensusScore: 50,
+      consensus: "NEUTRAL",
+      agreement: 0,
+      conclusion:
+        "No timeframe data available."
+    };
+  }
+
+  const messages = [];
+
+  let bullishCount = 0;
+  let bearishCount = 0;
+  let neutralCount = 0;
+
+  for (
+    let i = 0;
+    i < analyses.length;
+    i++
+  ) {
+
+    const current =
+      analyses[i];
+
+    if (
+      current.view ===
+      "BULLISH"
+    ) {
+
+      bullishCount++;
+
+    } else if (
+      current.view ===
+      "BEARISH"
+    ) {
+
+      bearishCount++;
+
+    } else {
+
+      neutralCount++;
+    }
+
+    const lower =
+      analyses[
+        Math.max(
+          0,
+          i - 2
+        )
+      ];
+
+    const higher =
+      analyses[
+        Math.min(
+          analyses.length - 1,
+          i + 1
+        )
+      ];
+
+    let message =
+      `${current.label}: نظر ${current.view}.`;
+
+    if (
+      lower &&
+      lower.key !==
+      current.key
+    ) {
+
+      if (
+        lower.view ===
+        current.view
+      ) {
+
+        message +=
+          ` با ${lower.label} هم‌جهت است.`;
+
+      } else {
+
+        message +=
+          ` با ${lower.label} اختلاف دارد.`;
+      }
+    }
+
+    if (
+      higher &&
+      higher.key !==
+      current.key
+    ) {
+
+      if (
+        higher.view ===
+        current.view
+      ) {
+
+        message +=
+          ` تایم بالاتر ${higher.label} نیز تأیید می‌کند.`;
+
+      } else {
+
+        message +=
+          ` تایم بالاتر ${higher.label} هنوز تأیید کامل نمی‌دهد.`;
+      }
+    }
+
+    messages.push({
+      timeframe:
+        current.key,
+
+      label:
+        current.label,
+
+      view:
+        current.view,
+
+      score:
+        current.score,
+
+      message
+    });
+  }
+
+  const weighted = [];
+
+  for (
+    const a of analyses
+  ) {
+
+    let weight = 1;
+
+    if (
+      a.minutes >= 1440
+    ) {
+
+      weight = 5;
+
+    } else if (
+      a.minutes >= 240
+    ) {
+
+      weight = 4;
+
+    } else if (
+      a.minutes >= 60
+    ) {
+
+      weight = 3;
+
+    } else if (
+      a.minutes >= 15
+    ) {
+
+      weight = 2;
+    }
+
+    weighted.push({
+      score:
+        num(a.score),
+      weight
+    });
+  }
+
+  const weightTotal =
+    weighted.reduce(
+      (a, b) =>
+        a + b.weight,
+      0
+    );
+
+  const consensusScore =
+    weightTotal
+      ? weighted.reduce(
+          (sum, x) =>
+            sum +
+            x.score *
+            x.weight,
+          0
+        ) / weightTotal
+      : 50;
+
+  let consensus =
+    "NEUTRAL";
+
+  if (
+    consensusScore >= 65
+  ) {
+
+    consensus =
+      "BULLISH";
+
+  } else if (
+    consensusScore <= 35
+  ) {
+
+    consensus =
+      "BEARISH";
+  }
+
+  const directional =
+    bullishCount +
+    bearishCount;
+
+  const dominant =
+    Math.max(
+      bullishCount,
+      bearishCount
+    );
+
+  const agreement =
+    directional
+      ? (
+          dominant /
+          directional
+        ) * 100
+      : 0;
+
+  let conclusion =
+    "تایم‌فریم‌ها اجماع مشخصی ندارند.";
+
+  if (
+    consensus ===
+    "BULLISH"
+  ) {
+
+    conclusion =
+      "اکثریت ساختار تایم‌فریم‌ها صعودی است و تایم‌فریم‌های بالاتر وزن بیشتری در اجماع دارند.";
+
+  } else if (
+    consensus ===
+    "BEARISH"
+  ) {
+
+    conclusion =
+      "اکثریت ساختار تایم‌فریم‌ها نزولی است و تایم‌فریم‌های بالاتر وزن بیشتری در اجماع دارند.";
+  }
+
+  return {
+    messages,
+
+    bullishCount,
+    bearishCount,
+    neutralCount,
+
+    consensusScore:
+      round(
+        consensusScore,
+        1
+      ),
+
+    consensus,
+
+    agreement:
+      round(
+        agreement,
+        1
+      ),
+
+    conclusion
+  };
+}
+
+/* =========================================================
    STYLE ANALYSIS
 ========================================================= */
 
-function styleAnalysis(data) {
+function styleAnalysis(
+  data
+) {
 
   const {
     trend,
@@ -874,33 +1891,35 @@ function styleAnalysis(data) {
     macdValue,
     footprint,
     orderbook,
-    hunt,
-    atrValue,
-    price
+    hunt
   } = data;
 
   const styles = [];
 
-  /* Scalping */
+  /* ---------- SCALPING ---------- */
 
   let scalpScore = 50;
+
   const scalpReasons = [];
 
   if (
     footprint.pressure ===
     "BUY PRESSURE"
   ) {
+
     scalpScore += 18;
+
     scalpReasons.push(
       "Aggressive executed buying is dominant."
     );
-  }
 
-  if (
+  } else if (
     footprint.pressure ===
     "SELL PRESSURE"
   ) {
+
     scalpScore -= 18;
+
     scalpReasons.push(
       "Aggressive executed selling is dominant."
     );
@@ -910,60 +1929,93 @@ function styleAnalysis(data) {
     orderbook.pressure ===
     "BUY PRESSURE"
   ) {
-    scalpScore += 12;
-    scalpReasons.push(
-      "Bid-side order-book liquidity is dominant."
-    );
-  }
 
-  if (
+    scalpScore += 12;
+
+    scalpReasons.push(
+      "Bid-side liquidity is dominant."
+    );
+
+  } else if (
     orderbook.pressure ===
     "SELL PRESSURE"
   ) {
+
     scalpScore -= 12;
+
     scalpReasons.push(
-      "Ask-side order-book liquidity is dominant."
+      "Ask-side liquidity is dominant."
     );
   }
 
   styles.push({
     name: "Scalping",
-    score: Math.max(0, Math.min(100, scalpScore)),
+
+    score:
+      Math.max(
+        0,
+        Math.min(
+          100,
+          scalpScore
+        )
+      ),
+
     view:
       scalpScore >= 65
         ? "BULLISH"
         : scalpScore <= 35
           ? "BEARISH"
           : "NEUTRAL",
-    reasons: scalpReasons
+
+    reasons:
+      scalpReasons
   });
 
-  /* Day Trading */
+  /* ---------- DAY TRADING ---------- */
 
   let dayScore = 50;
+
   const dayReasons = [];
 
-  if (trend.direction === "BULLISH") {
+  if (
+    trend.direction ===
+    "BULLISH"
+  ) {
+
     dayScore += 20;
+
     dayReasons.push(
       "Price structure is above the short/medium moving averages."
     );
-  }
 
-  if (trend.direction === "BEARISH") {
+  } else if (
+    trend.direction ===
+    "BEARISH"
+  ) {
+
     dayScore -= 20;
+
     dayReasons.push(
       "Price structure is below the short/medium moving averages."
     );
   }
 
-  if (rsiValue > 55) {
+  if (
+    rsiValue > 55
+  ) {
+
     dayScore += 10;
+
     dayReasons.push(
       "RSI confirms positive momentum."
     );
-  } else if (rsiValue < 45) {
+
+  } else if (
+    rsiValue < 45
+  ) {
+
     dayScore -= 10;
+
     dayReasons.push(
       "RSI confirms negative momentum."
     );
@@ -971,17 +2023,28 @@ function styleAnalysis(data) {
 
   styles.push({
     name: "Day Trading",
-    score: Math.max(0, Math.min(100, dayScore)),
+
+    score:
+      Math.max(
+        0,
+        Math.min(
+          100,
+          dayScore
+        )
+      ),
+
     view:
       dayScore >= 65
         ? "BULLISH"
         : dayScore <= 35
           ? "BEARISH"
           : "NEUTRAL",
-    reasons: dayReasons
+
+    reasons:
+      dayReasons
   });
 
-  /* Swing */
+  /* ---------- SWING ---------- */
 
   let swingScore =
     trend.score;
@@ -995,13 +2058,21 @@ function styleAnalysis(data) {
   if (
     macdValue !== null
   ) {
-    if (macdValue > 0) {
+
+    if (
+      macdValue > 0
+    ) {
+
       swingScore += 8;
+
       swingReasons.push(
         "MACD is above its zero baseline."
       );
+
     } else {
+
       swingScore -= 8;
+
       swingReasons.push(
         "MACD is below its zero baseline."
       );
@@ -1010,50 +2081,72 @@ function styleAnalysis(data) {
 
   styles.push({
     name: "Swing Trading",
-    score: Math.max(0, Math.min(100, swingScore)),
+
+    score:
+      Math.max(
+        0,
+        Math.min(
+          100,
+          swingScore
+        )
+      ),
+
     view:
       swingScore >= 65
         ? "BULLISH"
         : swingScore <= 35
           ? "BEARISH"
           : "NEUTRAL",
-    reasons: swingReasons
+
+    reasons:
+      swingReasons
   });
 
-  /* Momentum */
+  /* ---------- MOMENTUM ---------- */
 
-  let momentum =
-    50;
+  let momentum = 50;
 
   const momentumReasons = [];
 
-  if (rsiValue >= 55) {
+  if (
+    rsiValue >= 55
+  ) {
+
     momentum += 20;
+
     momentumReasons.push(
       "Momentum favors buyers."
     );
-  }
 
-  if (rsiValue <= 45) {
+  } else if (
+    rsiValue <= 45
+  ) {
+
     momentum -= 20;
+
     momentumReasons.push(
       "Momentum favors sellers."
     );
   }
 
   if (
-    footprint.deltaPercent > 10
+    footprint.deltaPercent >
+    10
   ) {
+
     momentum += 15;
+
     momentumReasons.push(
       "Positive trade delta supports upside momentum."
     );
-  }
 
-  if (
-    footprint.deltaPercent < -10
+  } else if (
+    footprint.deltaPercent <
+    -10
   ) {
+
     momentum -= 15;
+
     momentumReasons.push(
       "Negative trade delta supports downside momentum."
     );
@@ -1061,43 +2154,66 @@ function styleAnalysis(data) {
 
   styles.push({
     name: "Momentum",
-    score: Math.max(0, Math.min(100, momentum)),
+
+    score:
+      Math.max(
+        0,
+        Math.min(
+          100,
+          momentum
+        )
+      ),
+
     view:
       momentum >= 65
         ? "BULLISH"
         : momentum <= 35
           ? "BEARISH"
           : "NEUTRAL",
-    reasons: momentumReasons
+
+    reasons:
+      momentumReasons
   });
 
-  /* Smart Money */
+  /* ---------- SMART MONEY ---------- */
 
   let sm = 50;
+
   const smReasons = [];
 
-  if (hunt.detected) {
+  if (
+    hunt.detected
+  ) {
 
     if (
-      hunt.type.includes("BULLISH")
+      hunt.type.includes(
+        "BULLISH"
+      )
     ) {
+
       sm += 25;
+
       smReasons.push(
         "Bullish liquidity sweep detected."
       );
-    }
 
-    if (
-      hunt.type.includes("BEARISH")
+    } else if (
+      hunt.type.includes(
+        "BEARISH"
+      )
     ) {
+
       sm -= 25;
+
       smReasons.push(
         "Bearish liquidity sweep detected."
       );
     }
+
   } else {
+
     smReasons.push(
-      "No confirmed liquidity sweep in the sampled data."
+      "No confirmed liquidity sweep."
     );
   }
 
@@ -1105,17 +2221,20 @@ function styleAnalysis(data) {
     orderbook.pressure ===
     "BUY PRESSURE"
   ) {
+
     sm += 10;
+
     smReasons.push(
       "Buy-side resting liquidity is stronger."
     );
-  }
 
-  if (
+  } else if (
     orderbook.pressure ===
     "SELL PRESSURE"
   ) {
+
     sm -= 10;
+
     smReasons.push(
       "Sell-side resting liquidity is stronger."
     );
@@ -1123,14 +2242,25 @@ function styleAnalysis(data) {
 
   styles.push({
     name: "Smart Money",
-    score: Math.max(0, Math.min(100, sm)),
+
+    score:
+      Math.max(
+        0,
+        Math.min(
+          100,
+          sm
+        )
+      ),
+
     view:
       sm >= 65
         ? "BULLISH"
         : sm <= 35
           ? "BEARISH"
           : "NEUTRAL",
-    reasons: smReasons
+
+    reasons:
+      smReasons
   });
 
   return styles;
@@ -1140,15 +2270,20 @@ function styleAnalysis(data) {
    DEEP ANALYSIS
 ========================================================= */
 
-async function analyzeSymbol(input) {
+async function analyzeSymbol(
+  input
+) {
 
   const found =
-    await findSymbol(input);
+    await findSymbol(
+      input
+    );
 
   if (!found.found) {
 
     return {
       ok: false,
+
       error:
         `Symbol ${found.symbol} was not found`
     };
@@ -1160,109 +2295,257 @@ async function analyzeSymbol(input) {
   const symbol =
     found.symbol;
 
+  /* ---------- MARKET DATA ---------- */
+
   const [
-    candles1m,
-    candles15m,
-    candles1h,
+    availableTimeframes,
     footprintData,
     orderBookData
   ] =
     await Promise.all([
-      getKlines(category, symbol, "1"),
-      getKlines(category, symbol, "15"),
-      getKlines(category, symbol, "60"),
-      footprint(category, symbol),
-      orderBook(category, symbol)
+      getAvailableTimeframes(
+        category,
+        symbol
+      ),
+
+      footprint(
+        category,
+        symbol
+      ),
+
+      orderBook(
+        category,
+        symbol
+      )
     ]);
 
   if (
-    !candles1m.length ||
-    !candles15m.length
+    !availableTimeframes.length
   ) {
+
     throw new Error(
-      "Insufficient market data"
+      "No supported timeframe data available"
     );
   }
 
-  const close1m =
-    candles1m.map(x => x.close);
+  /* ---------- ANALYZE EACH TF ---------- */
 
-  const close15m =
-    candles15m.map(x => x.close);
+  const timeframeAnalyses =
+    availableTimeframes.map(
+      tf =>
+        analyzeTimeframe(
+          tf,
+          tf.candles
+        )
+    );
 
-  const trend1m =
-    trendAnalysis(candles1m);
+  /* ---------- TIMEFRAME CHAT ---------- */
 
-  const trend15m =
-    trendAnalysis(candles15m);
+  const dialogue =
+    timeframeDialogue(
+      timeframeAnalyses
+    );
+
+  /* ---------- PRIMARY 1M ---------- */
+
+  const oneMinute =
+    timeframeAnalyses.find(
+      x =>
+        x.key === "1m"
+    ) ||
+    timeframeAnalyses[0];
+
+  /* ---------- 15M ---------- */
+
+  const fifteenMinute =
+    timeframeAnalyses.find(
+      x =>
+        x.key === "15m"
+    ) ||
+    null;
+
+  /* ---------- 1H ---------- */
+
+  const oneHour =
+    timeframeAnalyses.find(
+      x =>
+        x.key === "1h"
+    ) ||
+    null;
+
+  /* ---------- 4H ---------- */
+
+  const fourHour =
+    timeframeAnalyses.find(
+      x =>
+        x.key === "4h"
+    ) ||
+    null;
+
+  /* ---------- DAILY ---------- */
+
+  const daily =
+    timeframeAnalyses.find(
+      x =>
+        x.key === "1d"
+    ) ||
+    null;
 
   const rsiValue =
-    rsi(close1m, 14);
+    oneMinute.rsi;
 
   const macdValue =
-    macd(close1m);
+    oneMinute.macd;
 
   const atrValue =
-    atr(candles1m, 14);
-
-  const bollingerValue =
-    bollinger(close1m, 20);
+    oneMinute.atr;
 
   const levels =
-    supportResistance(candles1m);
+    oneMinute.supportResistance;
 
   const hunt =
-    liquidityHunt(candles1m);
+    oneMinute.liquidity.hunt;
 
   let futures = null;
 
   if (
-    category === "linear"
+    category ===
+    "linear"
   ) {
+
     futures =
-      await futuresData(symbol);
+      await futuresData(
+        symbol
+      );
   }
+
+  /* ---------- STYLES ---------- */
 
   const styles =
     styleAnalysis({
-      trend: trend1m,
+      trend:
+        oneMinute.trend,
+
       rsiValue,
+
       macdValue,
-      footprint: footprintData,
-      orderbook: orderBookData,
+
+      footprint:
+        footprintData,
+
+      orderbook:
+        orderBookData,
+
       hunt,
+
       atrValue,
-      price: trend1m.price
+
+      price:
+        oneMinute.price
     });
+
+  /* ---------- CONFIRMATIONS ---------- */
 
   const confirmations = [];
 
   if (
-    trend1m.direction ===
-    trend15m.direction
+    fifteenMinute
   ) {
-    confirmations.push(
-      `1m and 15m trend agree: ${trend1m.direction}`
-    );
-  } else {
-    confirmations.push(
-      "1m and 15m trends are not fully aligned."
-    );
+
+    if (
+      oneMinute.view ===
+      fifteenMinute.view
+    ) {
+
+      confirmations.push(
+        `1m and 15m agree: ${oneMinute.view}`
+      );
+
+    } else {
+
+      confirmations.push(
+        "1m and 15m are not aligned."
+      );
+    }
+  }
+
+  if (
+    oneHour
+  ) {
+
+    if (
+      oneMinute.view ===
+      oneHour.view
+    ) {
+
+      confirmations.push(
+        `1m and 1h agree: ${oneMinute.view}`
+      );
+
+    } else {
+
+      confirmations.push(
+        "1m and 1h are not aligned."
+      );
+    }
+  }
+
+  if (
+    fourHour
+  ) {
+
+    if (
+      oneMinute.view ===
+      fourHour.view
+    ) {
+
+      confirmations.push(
+        `1m and 4h agree: ${oneMinute.view}`
+      );
+
+    } else {
+
+      confirmations.push(
+        "1m and 4h are not aligned."
+      );
+    }
+  }
+
+  if (
+    daily
+  ) {
+
+    if (
+      oneMinute.view ===
+      daily.view
+    ) {
+
+      confirmations.push(
+        `1m and 1D agree: ${oneMinute.view}`
+      );
+
+    } else {
+
+      confirmations.push(
+        "1m and 1D are not aligned."
+      );
+    }
   }
 
   if (
     footprintData.pressure ===
     "BUY PRESSURE"
   ) {
+
     confirmations.push(
       "Executed trade flow favors buyers."
     );
-  }
 
-  if (
+  } else if (
     footprintData.pressure ===
     "SELL PRESSURE"
   ) {
+
     confirmations.push(
       "Executed trade flow favors sellers."
     );
@@ -1272,90 +2555,175 @@ async function analyzeSymbol(input) {
     orderBookData.pressure ===
     "BUY PRESSURE"
   ) {
+
     confirmations.push(
       "Resting order-book liquidity favors buyers."
     );
-  }
 
-  if (
+  } else if (
     orderBookData.pressure ===
     "SELL PRESSURE"
   ) {
+
     confirmations.push(
       "Resting order-book liquidity favors sellers."
     );
   }
 
-  if (hunt.detected) {
+  if (
+    hunt.detected
+  ) {
+
     confirmations.push(
       hunt.type
     );
   }
 
-  let overall =
+  /* ---------- STYLE SCORE ---------- */
+
+  let styleScore =
     avg(
-      styles.map(x => x.score)
+      styles.map(
+        x => x.score
+      )
     );
 
-  if (
-    trend15m.direction ===
-    trend1m.direction
-  ) {
-    overall += 5;
-  }
+  /* ---------- FINAL SCORE ---------- */
+
+  let overall =
+    (
+      styleScore * 0.40 +
+      dialogue.consensusScore *
+      0.60
+    );
 
   overall =
     Math.max(
       0,
-      Math.min(100, overall)
+      Math.min(
+        100,
+        overall
+      )
     );
 
   let verdict =
     "NEUTRAL";
 
-  if (overall >= 65) {
-    verdict = "BULLISH";
-  } else if (overall <= 35) {
-    verdict = "BEARISH";
+  if (
+    overall >= 65
+  ) {
+
+    verdict =
+      "BULLISH";
+
+  } else if (
+    overall <= 35
+  ) {
+
+    verdict =
+      "BEARISH";
   }
 
+  /* ---------- TIMEFRAME LIST ---------- */
+
+  const timeframeList =
+    timeframeAnalyses.map(
+      x => ({
+        key:
+          x.key,
+
+        label:
+          x.label,
+
+        interval:
+          x.interval,
+
+        score:
+          x.score,
+
+        view:
+          x.view
+      })
+    );
+
   return {
+
     ok: true,
 
-    version: VERSION,
+    version:
+      VERSION,
 
     symbol,
-    baseCoin: found.baseCoin,
-    quoteCoin: found.quoteCoin,
+
+    baseCoin:
+      found.baseCoin,
+
+    quoteCoin:
+      found.quoteCoin,
 
     market: {
       category,
-      type: found.market
+
+      type:
+        found.market
     },
 
-    price: trend1m.price,
+    price:
+      oneMinute.price,
+
+    /* ---------- ALL AVAILABLE TF ---------- */
+
+    availableTimeframes:
+      timeframeList,
+
+    timeframeAnalysis:
+      timeframeAnalyses,
+
+    timeframeDialogue:
+      dialogue,
+
+    /* ---------- MAIN TF ---------- */
 
     trend: {
-      oneMinute: trend1m,
-      fifteenMinute: trend15m
+
+      oneMinute,
+
+      fifteenMinute,
+
+      oneHour,
+
+      fourHour,
+
+      daily
     },
 
     indicators: {
-      rsi: rsiValue,
-      macd: macdValue,
-      atr: atrValue,
-      bollinger: bollingerValue
+
+      rsi:
+        rsiValue,
+
+      macd:
+        macdValue,
+
+      atr:
+        atrValue,
+
+      bollinger:
+        oneMinute.bollinger
     },
 
-    supportResistance: levels,
+    supportResistance:
+      levels,
 
     liquidity: {
       hunt
     },
 
-    footprint: footprintData,
+    footprint:
+      footprintData,
 
-    orderBook: orderBookData,
+    orderBook:
+      orderBookData,
 
     futures,
 
@@ -1363,66 +2731,144 @@ async function analyzeSymbol(input) {
 
     confirmations,
 
-    overallScore: round(overall, 1),
+    overallScore:
+      round(
+        overall,
+        1
+      ),
 
     verdict,
 
-    source: "Bybit"
+    source:
+      "Bybit"
   };
 }
 
 /* =========================================================
-   HTML ANALYSIS PAGE
+   HTML ESCAPE
 ========================================================= */
 
 function htmlEscape(v) {
-  return String(v ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+
+  return String(
+    v ?? ""
+  )
+    .replace(
+      /&/g,
+      "&amp;"
+    )
+    .replace(
+      /</g,
+      "&lt;"
+    )
+    .replace(
+      />/g,
+      "&gt;"
+    )
+    .replace(
+      /"/g,
+      "&quot;"
+    );
 }
 
-function analysisHtml(data) {
+/* =========================================================
+   HTML
+========================================================= */
+
+function analysisHtml(
+  data
+) {
 
   if (!data.ok) {
+
     return `
       <div class="error">
-        ❌ ${htmlEscape(data.error)}
+        ❌ ${htmlEscape(
+          data.error
+        )}
       </div>
     `;
   }
 
+  /* ---------- STYLES ---------- */
+
   const styles =
     data.styles
-      .map(s => `
-        <div class="style">
-          <div class="style-top">
-            <b>${htmlEscape(s.name)}</b>
-            <span>${htmlEscape(s.view)}</span>
+      .map(
+        s => `
+          <div class="style">
+
+            <div class="style-top">
+
+              <b>
+                ${htmlEscape(
+                  s.name
+                )}
+              </b>
+
+              <span>
+                ${htmlEscape(
+                  s.view
+                )}
+              </span>
+
+            </div>
+
+            <div class="bar">
+              <i style="width:${
+                s.score
+              }%"></i>
+            </div>
+
+            <strong>
+              ${s.score}/100
+            </strong>
+
+            <ul>
+              ${
+                s.reasons
+                  .map(
+                    r =>
+                      `<li>${
+                        htmlEscape(r)
+                      }</li>`
+                  )
+                  .join("")
+              }
+            </ul>
+
           </div>
-          <div class="bar">
-            <i style="width:${s.score}%"></i>
-          </div>
-          <strong>${s.score}/100</strong>
-          <ul>
-            ${s.reasons.map(r =>
-              `<li>${htmlEscape(r)}</li>`
-            ).join("")}
-          </ul>
-        </div>
-      `)
+        `
+      )
       .join("");
 
+  /* ---------- SUPPORT ---------- */
+
   const supports =
-    data.supportResistance.supports
-      .map(x => formatPrice(x.price))
-      .join(" • ") || "No confirmed level";
+    data.supportResistance
+      .supports
+      .map(
+        x =>
+          formatPrice(
+            x.price
+          )
+      )
+      .join(" • ") ||
+    "No confirmed level";
+
+  /* ---------- RESISTANCE ---------- */
 
   const resistances =
-    data.supportResistance.resistances
-      .map(x => formatPrice(x.price))
-      .join(" • ") || "No confirmed level";
+    data.supportResistance
+      .resistances
+      .map(
+        x =>
+          formatPrice(
+            x.price
+          )
+      )
+      .join(" • ") ||
+    "No confirmed level";
 
   const f =
     data.footprint;
@@ -1433,172 +2879,523 @@ function analysisHtml(data) {
   const hunt =
     data.liquidity.hunt;
 
+  /* ---------- TIMEFRAME TABLE ---------- */
+
+  const timeframeRows =
+    data.timeframeAnalysis
+      .map(
+        x => `
+          <div class="tf-row">
+
+            <div>
+              <b>
+                ${htmlEscape(
+                  x.label
+                )}
+              </b>
+
+              <small>
+                ${htmlEscape(
+                  x.key
+                )}
+              </small>
+            </div>
+
+            <div>
+              <b>
+                ${htmlEscape(
+                  x.view
+                )}
+              </b>
+            </div>
+
+            <div>
+              ${x.score}/100
+            </div>
+
+          </div>
+        `
+      )
+      .join("");
+
+  /* ---------- DIALOGUE ---------- */
+
+  const dialogueRows =
+    data.timeframeDialogue
+      .messages
+      .map(
+        m => `
+          <div class="dialogue">
+
+            <b>
+              ${htmlEscape(
+                m.label
+              )}
+            </b>
+
+            <span>
+              ${htmlEscape(
+                m.view
+              )}
+            </span>
+
+            <p>
+              ${htmlEscape(
+                m.message
+              )}
+            </p>
+
+          </div>
+        `
+      )
+      .join("");
+
   return `
+
     <section class="result">
 
+      <!-- HEADER -->
+
       <div class="coin-head">
+
         <div>
-          <small>DEEP MARKET ANALYSIS</small>
-          <h2>🪙 ${htmlEscape(data.symbol)}</h2>
+
+          <small>
+            DEEP MULTI-TIMEFRAME ANALYSIS
+          </small>
+
+          <h2>
+            🪙 ${htmlEscape(
+              data.symbol
+            )}
+          </h2>
+
         </div>
 
-        <div class="verdict ${data.verdict.toLowerCase()}">
-          ${data.verdict}
-          <small>${data.overallScore}/100</small>
+        <div class="
+          verdict
+          ${data.verdict.toLowerCase()}
+        ">
+
+          ${htmlEscape(
+            data.verdict
+          )}
+
+          <small>
+            ${data.overallScore}/100
+          </small>
+
         </div>
+
       </div>
+
+      <!-- BASIC CARDS -->
 
       <div class="cards">
 
         <div class="card">
-          <small>PRICE</small>
-          <b>${formatPrice(data.price)}</b>
+
+          <small>
+            PRICE
+          </small>
+
+          <b>
+            ${formatPrice(
+              data.price
+            )}
+          </b>
+
         </div>
 
         <div class="card">
-          <small>1M TREND</small>
-          <b>${data.trend.oneMinute.direction}</b>
+
+          <small>
+            1M
+          </small>
+
+          <b>
+            ${data.trend.oneMinute.view}
+          </b>
+
         </div>
 
         <div class="card">
-          <small>15M CONFIRMATION</small>
-          <b>${data.trend.fifteenMinute.direction}</b>
+
+          <small>
+            15M
+          </small>
+
+          <b>
+            ${
+              data.trend.fifteenMinute
+                ? data.trend.fifteenMinute.view
+                : "N/A"
+            }
+          </b>
+
         </div>
 
         <div class="card">
-          <small>RSI</small>
-          <b>${round(data.indicators.rsi,2)}</b>
+
+          <small>
+            1H
+          </small>
+
+          <b>
+            ${
+              data.trend.oneHour
+                ? data.trend.oneHour.view
+                : "N/A"
+            }
+          </b>
+
         </div>
 
       </div>
 
-      <h3>📊 Trading Styles</h3>
+      <!-- ALL TIMEFRAMES -->
+
+      <h3>
+        🕐 تایم‌فریم‌های موجود Bybit
+      </h3>
+
+      <div class="tf-list">
+
+        ${timeframeRows}
+
+      </div>
+
+      <div class="data-box">
+
+        <b>
+          تعداد تایم‌فریم‌های واقعی:
+          ${data.availableTimeframes.length}
+        </b>
+
+        <p>
+          فقط تایم‌فریم‌هایی که Bybit برای این بازار
+          داده معتبر برگرداند نمایش داده شده‌اند.
+          تایم‌فریم ۳ روزه در سیستم وجود ندارد.
+        </p>
+
+      </div>
+
+      <!-- TIMEFRAME CHAT -->
+
+      <h3>
+        🧠 گفت‌وگوی تایم‌فریم‌ها
+      </h3>
+
+      <div class="data-box">
+
+        <b>
+          اجماع:
+          ${htmlEscape(
+            data.timeframeDialogue.consensus
+          )}
+        </b>
+
+        <p>
+          امتیاز اجماع:
+          ${data.timeframeDialogue.consensusScore}/100
+        </p>
+
+        <p>
+          میزان توافق:
+          ${data.timeframeDialogue.agreement}%
+        </p>
+
+        <p>
+          🟢 صعودی:
+          ${data.timeframeDialogue.bullishCount}
+          |
+          🔴 نزولی:
+          ${data.timeframeDialogue.bearishCount}
+          |
+          ⚪ خنثی:
+          ${data.timeframeDialogue.neutralCount}
+        </p>
+
+        <strong>
+          ${htmlEscape(
+            data.timeframeDialogue.conclusion
+          )}
+        </strong>
+
+      </div>
+
+      <div class="dialogue-list">
+
+        ${dialogueRows}
+
+      </div>
+
+      <!-- STYLES -->
+
+      <h3>
+        📊 Trading Styles
+      </h3>
+
       ${styles}
 
-      <h3>🎯 Support / Resistance</h3>
+      <!-- SUPPORT RESISTANCE -->
+
+      <h3>
+        🎯 Support / Resistance
+      </h3>
 
       <div class="levels">
 
         <div>
-          <b>🟢 Support</b>
-          <p>${htmlEscape(supports)}</p>
+
+          <b>
+            🟢 Support
+          </b>
+
+          <p>
+            ${htmlEscape(
+              supports
+            )}
+          </p>
+
         </div>
 
         <div>
-          <b>🔴 Resistance</b>
-          <p>${htmlEscape(resistances)}</p>
+
+          <b>
+            🔴 Resistance
+          </b>
+
+          <p>
+            ${htmlEscape(
+              resistances
+            )}
+          </p>
+
         </div>
 
       </div>
 
-      <h3>💧 Liquidity / Hunt</h3>
+      <!-- LIQUIDITY -->
+
+      <h3>
+        💧 Liquidity / Hunt
+      </h3>
 
       <div class="data-box">
-        <b>${htmlEscape(hunt.type)}</b>
-        <p>${htmlEscape(hunt.reason)}</p>
+
+        <b>
+          ${htmlEscape(
+            hunt.type
+          )}
+        </b>
+
+        <p>
+          ${htmlEscape(
+            hunt.reason
+          )}
+        </p>
+
         ${
           hunt.level
-            ? `<small>Level: ${formatPrice(hunt.level)}</small>`
+            ? `
+              <small>
+                Level:
+                ${formatPrice(
+                  hunt.level
+                )}
+              </small>
+            `
             : ""
         }
+
       </div>
 
-      <h3>👣 Footprint</h3>
+      <!-- FOOTPRINT -->
+
+      <h3>
+        👣 Footprint
+      </h3>
 
       <div class="data-grid">
 
         <div>
           Buy Volume
-          <b>${round(f.buyVolume,4)}</b>
+          <b>
+            ${round(
+              f.buyVolume,
+              4
+            )}
+          </b>
         </div>
 
         <div>
           Sell Volume
-          <b>${round(f.sellVolume,4)}</b>
+          <b>
+            ${round(
+              f.sellVolume,
+              4
+            )}
+          </b>
         </div>
 
         <div>
           Delta
-          <b>${round(f.delta,4)}</b>
+          <b>
+            ${round(
+              f.delta,
+              4
+            )}
+          </b>
         </div>
 
         <div>
           Delta %
-          <b>${round(f.deltaPercent,2)}%</b>
+          <b>
+            ${round(
+              f.deltaPercent,
+              2
+            )}%
+          </b>
         </div>
 
         <div>
           Pressure
-          <b>${f.pressure}</b>
+          <b>
+            ${htmlEscape(
+              f.pressure
+            )}
+          </b>
         </div>
 
         <div>
           Large Buy
-          <b>$${Math.round(f.largeBuy).toLocaleString()}</b>
+          <b>
+            $${Math.round(
+              f.largeBuy
+            ).toLocaleString()}
+          </b>
         </div>
 
         <div>
           Large Sell
-          <b>$${Math.round(f.largeSell).toLocaleString()}</b>
+          <b>
+            $${Math.round(
+              f.largeSell
+            ).toLocaleString()}
+          </b>
         </div>
 
       </div>
 
-      <h3>📚 Order Book</h3>
+      <!-- ORDER BOOK -->
+
+      <h3>
+        📚 Order Book
+      </h3>
 
       <div class="data-grid">
 
         <div>
           Buy Share
-          <b>${round(ob.buyShare,2)}%</b>
+          <b>
+            ${round(
+              ob.buyShare,
+              2
+            )}%
+          </b>
         </div>
 
         <div>
           Sell Share
-          <b>${round(ob.sellShare,2)}%</b>
+          <b>
+            ${round(
+              ob.sellShare,
+              2
+            )}%
+          </b>
         </div>
 
         <div>
           Best Bid
-          <b>${formatPrice(ob.bestBid)}</b>
+          <b>
+            ${formatPrice(
+              ob.bestBid
+            )}
+          </b>
         </div>
 
         <div>
           Best Ask
-          <b>${formatPrice(ob.bestAsk)}</b>
+          <b>
+            ${formatPrice(
+              ob.bestAsk
+            )}
+          </b>
         </div>
 
         <div>
           Pressure
-          <b>${ob.pressure}</b>
+          <b>
+            ${htmlEscape(
+              ob.pressure
+            )}
+          </b>
         </div>
 
       </div>
 
+      <!-- FUTURES -->
+
       ${
         data.futures
           ? `
-            <h3>⚡ Derivatives Data</h3>
+
+            <h3>
+              ⚡ Derivatives Data
+            </h3>
 
             <div class="data-grid">
 
               <div>
                 Open Interest
-                <b>${data.futures.openInterest ?? "N/A"}</b>
+
+                <b>
+                  ${
+                    data.futures.openInterest ??
+                    "N/A"
+                  }
+                </b>
               </div>
 
               <div>
                 OI Value
-                <b>$${data.futures.openInterestValue
-                  ? Math.round(data.futures.openInterestValue).toLocaleString()
-                  : "N/A"}</b>
+
+                <b>
+                  ${
+                    data.futures.openInterestValue
+                      ? "$" +
+                        Math.round(
+                          data.futures
+                            .openInterestValue
+                        ).toLocaleString()
+                      : "N/A"
+                  }
+                </b>
               </div>
 
               <div>
                 Funding
-                <b>${data.futures.fundingRate !== null
-                  ? data.futures.fundingRate
-                  : "N/A"}</b>
+
+                <b>
+                  ${
+                    data.futures.fundingRate !==
+                    null
+                      ? data.futures
+                          .fundingRate
+                      : "N/A"
+                  }
+                </b>
               </div>
 
             </div>
@@ -1606,23 +3403,55 @@ function analysisHtml(data) {
           : ""
       }
 
-      <h3>🧠 Deep Conclusion</h3>
+      <!-- CONCLUSION -->
+
+      <h3>
+        🧠 Deep Conclusion
+      </h3>
 
       <div class="conclusion">
+
         ${
           data.confirmations
-            .map(x =>
-              `<div>• ${htmlEscape(x)}</div>`
+            .map(
+              x =>
+                `<div>
+                  • ${htmlEscape(x)}
+                </div>`
             )
             .join("")
         }
+
+      </div>
+
+      <div class="data-box">
+
+        <b>
+          نتیجه نهایی چندتایم‌فریمی:
+        </b>
+
+        <p>
+          ${htmlEscape(
+            data.timeframeDialogue.conclusion
+          )}
+        </p>
+
+        <strong>
+          ${htmlEscape(
+            data.verdict
+          )}
+          —
+          ${data.overallScore}/100
+        </strong>
+
       </div>
 
       <footer>
-        📊 Analysis based on Bybit information
+        📊 Analysis based on real Bybit market data
       </footer>
 
     </section>
+
   `;
 }
 
@@ -1632,91 +3461,152 @@ function analysisHtml(data) {
 
 export default {
 
-  async fetch(request, env) {
+  async fetch(
+    request,
+    env
+  ) {
 
-    if (request.method === "OPTIONS") {
-      return new Response(null, {
-        headers: {
-          "access-control-allow-origin": "*",
-          "access-control-allow-methods": "GET,POST,OPTIONS",
-          "access-control-allow-headers": "Content-Type"
+    /* ---------- OPTIONS ---------- */
+
+    if (
+      request.method ===
+      "OPTIONS"
+    ) {
+
+      return new Response(
+        null,
+        {
+          headers: {
+            "access-control-allow-origin":
+              "*",
+
+            "access-control-allow-methods":
+              "GET,POST,OPTIONS",
+
+            "access-control-allow-headers":
+              "Content-Type"
+          }
         }
-      });
+      );
     }
 
     const url =
-      new URL(request.url);
+      new URL(
+        request.url
+      );
 
     try {
 
-      /* ---------------------------------------------
+      /* =====================================================
          HEALTH
-      --------------------------------------------- */
+      ===================================================== */
 
       if (
-        request.method === "GET" &&
+        request.method ===
+          "GET" &&
         url.pathname === "/"
       ) {
+
         return json({
+
           ok: true,
-          service: "Global Pulse",
-          worker: "telegram-auto-channel",
-          version: VERSION,
-          status: "online",
-          cryptoAnalyzer: true,
-          time: new Date().toISOString()
+
+          service:
+            "Global Pulse",
+
+          worker:
+            "telegram-auto-channel",
+
+          version:
+            VERSION,
+
+          status:
+            "online",
+
+          cryptoAnalyzer:
+            true,
+
+          time:
+            new Date().toISOString()
+
         });
       }
 
-      /* ---------------------------------------------
+      /* =====================================================
          CRYPTO JSON
-      --------------------------------------------- */
+      ===================================================== */
 
       if (
-        request.method === "GET" &&
-        url.pathname === "/crypto-analyze"
+        request.method ===
+          "GET" &&
+        url.pathname ===
+          "/crypto-analyze"
       ) {
 
         const input =
-          url.searchParams.get("symbol");
+          url.searchParams.get(
+            "symbol"
+          );
 
         if (!input) {
-          return json({
-            ok: false,
-            error: "Symbol is required"
-          }, 400);
+
+          return json(
+            {
+              ok: false,
+              error:
+                "Symbol is required"
+            },
+            400
+          );
         }
 
-        if (blocked(input)) {
-          return json({
-            ok: false,
-            error: "This symbol is not available."
-          }, 403);
+        if (
+          blocked(input)
+        ) {
+
+          return json(
+            {
+              ok: false,
+              error:
+                "This symbol is not available."
+            },
+            403
+          );
         }
 
         const result =
-          await analyzeSymbol(input);
+          await analyzeSymbol(
+            input
+          );
 
-        return json(result);
+        return json(
+          result
+        );
       }
 
-      /* ---------------------------------------------
+      /* =====================================================
          CRYPTO HTML
-      --------------------------------------------- */
+      ===================================================== */
 
       if (
-        request.method === "GET" &&
-        url.pathname === "/crypto"
+        request.method ===
+          "GET" &&
+        url.pathname ===
+          "/crypto"
       ) {
 
         const input =
-          url.searchParams.get("symbol");
+          url.searchParams.get(
+            "symbol"
+          );
 
         if (!input) {
+
           return new Response(
             "<h2>Symbol is required</h2>",
             {
               status: 400,
+
               headers: {
                 "content-type":
                   "text/html; charset=utf-8"
@@ -1725,11 +3615,15 @@ export default {
           );
         }
 
-        if (blocked(input)) {
+        if (
+          blocked(input)
+        ) {
+
           return new Response(
             "<h2>Symbol not available</h2>",
             {
               status: 403,
+
               headers: {
                 "content-type":
                   "text/html; charset=utf-8"
@@ -1739,10 +3633,14 @@ export default {
         }
 
         const result =
-          await analyzeSymbol(input);
+          await analyzeSymbol(
+            input
+          );
 
         return new Response(
-          analysisHtml(result),
+          analysisHtml(
+            result
+          ),
           {
             headers: {
               "content-type":
@@ -1752,28 +3650,46 @@ export default {
         );
       }
 
-      return json({
-        ok: false,
-        error: "Not Found",
-        path: url.pathname
-      }, 404);
+      /* =====================================================
+         NOT FOUND
+      ===================================================== */
 
-    } catch (error) {
+      return json(
+        {
+          ok: false,
+          error:
+            "Not Found",
+          path:
+            url.pathname
+        },
+        404
+      );
+
+    } catch (
+      error
+    ) {
 
       console.error(
         JSON.stringify({
           error:
-            error.message || String(error),
+            error.message ||
+            String(error),
+
           path:
             url.pathname
         })
       );
 
-      return json({
-        ok: false,
-        error:
-          error.message || String(error)
-      }, 500);
+      return json(
+        {
+          ok: false,
+
+          error:
+            error.message ||
+            String(error)
+        },
+        500
+      );
     }
   }
 };
