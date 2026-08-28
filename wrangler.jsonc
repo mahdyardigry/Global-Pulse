@@ -5,5 +5,11 @@
 
   "vars": {
     "TELEGRAM_CHANNEL_ID": "-1003261070240"
+  },
+
+  "triggers": {
+    "crons": [
+      "*/15 * * * *"
+    ]
   }
 }
