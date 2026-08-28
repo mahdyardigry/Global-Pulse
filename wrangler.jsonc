@@ -1,6 +1,9 @@
 {
   "name": "telegram-auto-channel",
   "main": "src/index.js",
-  "compatibility_date": "2026-08-27"
-}
+  "compatibility_date": "2026-08-27",
 
+  "vars": {
+    "TELEGRAM_CHANNEL_ID": "-1003261070240"
+  }
+}
