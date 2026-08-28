@@ -1,35 +1,177 @@
 const TELEGRAM_API = "https://api.telegram.org";
 
-const MAX_ITEMS_PER_SOURCE = 10;
-const MAX_POSTS_PER_RUN = 3;
-const DEDUPE_HOURS = 48;
+/* =========================================================
+   GLOBAL PULSE — TELEGRAM AUTO CHANNEL V2
+   ---------------------------------------------------------
+   امکانات:
+   - Telegram Bot
+   - ارسال متن
+   - ارسال HTML
+   - ارسال عکس
+   - ارسال خبر کامل
+   - فیلتر محتوای مرتبط با ایران
+   - جلوگیری از خبرهای تکراری در حافظه کوتاه‌مدت
+   - Global News
+   - Global Price
+   - Country Battle
+   - Cost of Living
+   - Global Trend
+   - Health / Debug
+   ========================================================= */
 
-const SOURCES = [
-  {
-    name: "BBC",
-    url: "https://feeds.bbci.co.uk/news/rss.xml",
-    trust: 90
-  },
-  {
-    name: "Al Jazeera",
-    url: "https://www.aljazeera.com/xml/rss/all.xml",
-    trust: 85
-  }
-];
+
+/* =========================================================
+   CONFIG
+   ========================================================= */
+
+const CONFIG = {
+  SERVICE: "Global Pulse",
+  WORKER: "telegram-auto-channel",
+
+  // مدت نگهداری هش خبرهای منتشرشده در حافظه Worker
+  DUPLICATE_TTL: 86400,
+
+  // حداکثر طول متن تلگرام
+  TELEGRAM_MAX_LENGTH: 4096,
+
+  // زبان محتوای کانال
+  LANGUAGE: "en",
+
+  // کشورهای حذف‌شده از محتوای خبری
+  BLOCKED_COUNTRIES: [
+    "iran",
+    "islamic republic of iran",
+    "iranian",
+    "ایران",
+    "ایرانی",
+    "تهران",
+    "tehran",
+    "persia",
+    "persian"
+  ]
+};
+
+
+/* =========================================================
+   JSON
+   ========================================================= */
 
 function json(data, status = 200) {
-  return new Response(JSON.stringify(data, null, 2), {
-    status,
-    headers: {
-      "content-type": "application/json; charset=utf-8",
-      "cache-control": "no-store"
+  return new Response(
+    JSON.stringify(data, null, 2),
+    {
+      status,
+      headers: {
+        "content-type": "application/json; charset=utf-8",
+        "cache-control": "no-store"
+      }
     }
-  });
+  );
 }
 
+
+/* =========================================================
+   TEXT HELPERS
+   ========================================================= */
+
+function cleanText(value) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function escapeHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function truncate(text, max = CONFIG.TELEGRAM_MAX_LENGTH) {
+  const value = String(text || "");
+
+  if (value.length <= max) {
+    return value;
+  }
+
+  return value.slice(0, max - 3) + "...";
+}
+
+
+/* =========================================================
+   IRAN FILTER
+   ========================================================= */
+
+function containsBlockedContent(text) {
+  const value = cleanText(text).toLowerCase();
+
+  if (!value) {
+    return false;
+  }
+
+  return CONFIG.BLOCKED_COUNTRIES.some(
+    word => value.includes(word.toLowerCase())
+  );
+}
+
+
+/*
+ * بررسی قوی‌تر برای عنوان + متن + منبع
+ */
+
+function isAllowedContent({
+  title = "",
+  description = "",
+  content = "",
+  source = "",
+  country = ""
+} = {}) {
+
+  const combined = [
+    title,
+    description,
+    content,
+    source,
+    country
+  ].join(" ");
+
+  return !containsBlockedContent(combined);
+}
+
+
+/* =========================================================
+   DUPLICATE KEY
+   ========================================================= */
+
+async function sha256(text) {
+  const data = new TextEncoder().encode(
+    cleanText(text).toLowerCase()
+  );
+
+  const hash = await crypto.subtle.digest(
+    "SHA-256",
+    data
+  );
+
+  return [...new Uint8Array(hash)]
+    .map(
+      byte =>
+        byte.toString(16).padStart(2, "0")
+    )
+    .join("");
+}
+
+
+/* =========================================================
+   TELEGRAM API
+   ========================================================= */
+
 async function telegram(env, method, body = {}) {
+
   if (!env.TELEGRAM_BOT_TOKEN) {
-    throw new Error("TELEGRAM_BOT_TOKEN is not configured");
+    throw new Error(
+      "TELEGRAM_BOT_TOKEN is not configured"
+    );
   }
 
   const response = await fetch(
@@ -47,598 +189,641 @@ async function telegram(env, method, body = {}) {
 
   if (!data.ok) {
     throw new Error(
-      `Telegram API error: ${data.description || "Unknown error"}`
+      `Telegram API error: ${
+        data.description || "Unknown error"
+      }`
     );
   }
 
   return data;
 }
 
-async function sendMessage(env, text) {
-  if (!env.TELEGRAM_CHANNEL_ID) {
-    throw new Error("TELEGRAM_CHANNEL_ID is not configured");
-  }
 
-  return telegram(env, "sendMessage", {
-    chat_id: env.TELEGRAM_CHANNEL_ID,
-    text: String(text),
-    disable_web_page_preview: true
-  });
-}
+/* =========================================================
+   CHANNEL ID
+   ========================================================= */
 
-async function sendHtmlMessage(env, html) {
-  if (!env.TELEGRAM_CHANNEL_ID) {
-    throw new Error("TELEGRAM_CHANNEL_ID is not configured");
-  }
+function getChannelId(env) {
 
-  return telegram(env, "sendMessage", {
-    chat_id: env.TELEGRAM_CHANNEL_ID,
-    text: String(html),
-    parse_mode: "HTML",
-    disable_web_page_preview: true
-  });
-}
+  const id =
+    env.TELEGRAM_CHANNEL_ID ||
+    "";
 
-function cleanText(text = "") {
-  return String(text)
-    .replace(/<[^>]*>/g, " ")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;/gi, "'")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function normalize(text = "") {
-  return cleanText(text)
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s]/gu, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function escapeHtml(text = "") {
-  return String(text)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-function truncate(text, max = 900) {
-  const value = cleanText(text);
-
-  if (value.length <= max) {
-    return value;
-  }
-
-  return value.slice(0, max - 1) + "…";
-}
-
-function getTag(block, tag) {
-  const regex = new RegExp(
-    `<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)</${tag}>`,
-    "i"
-  );
-
-  const match = block.match(regex);
-
-  return match ? cleanText(match[1]) : "";
-}
-
-function getLink(block) {
-  const normal = getTag(block, "link");
-
-  if (normal) {
-    return normal;
-  }
-
-  const href = block.match(
-    /<link[^>]+href=["']([^"']+)["']/i
-  );
-
-  return href ? href[1] : "";
-}
-
-function parseRSS(xml, source) {
-  const items = [];
-
-  const blocks =
-    xml.match(/<item[\s\S]*?<\/item>/gi) || [];
-
-  for (
-    const block of blocks.slice(
-      0,
-      MAX_ITEMS_PER_SOURCE
-    )
-  ) {
-    const title =
-      getTag(block, "title");
-
-    const description =
-      getTag(block, "description") ||
-      getTag(block, "summary") ||
-      getTag(block, "content:encoded");
-
-    const link =
-      getLink(block);
-
-    const pubDate =
-      getTag(block, "pubDate") ||
-      getTag(block, "published") ||
-      getTag(block, "updated");
-
-    if (!title || !link) {
-      continue;
-    }
-
-    items.push({
-      title,
-      description,
-      link,
-      source: source.name,
-      trust: source.trust,
-      publishedAt:
-        pubDate ||
-        new Date().toISOString(),
-
-      key:
-        normalize(title) +
-        "|" +
-        link
-    });
-  }
-
-  return items;
-}
-
-async function fetchSource(source) {
-  const response =
-    await fetch(source.url, {
-      headers: {
-        "user-agent":
-          "GlobalPulse/1.0"
-      }
-    });
-
-  if (!response.ok) {
+  if (!id) {
     throw new Error(
-      `${source.name}: HTTP ${response.status}`
+      "TELEGRAM_CHANNEL_ID is not configured"
     );
   }
 
-  const xml =
-    await response.text();
-
-  return parseRSS(
-    xml,
-    source
-  );
+  return id;
 }
 
-async function collectNews() {
-  const all = [];
 
-  for (
-    const source of SOURCES
-  ) {
-    try {
-      const items =
-        await fetchSource(
-          source
-        );
+/* =========================================================
+   SEND TEXT
+   ========================================================= */
 
-      all.push(...items);
+async function sendMessage(env, text) {
 
-    } catch (error) {
+  const channelId =
+    getChannelId(env);
 
-      console.error(
-        JSON.stringify({
-          type:
-            "source_error",
-          source:
-            source.name,
-          error:
-            error.message
-        })
-      );
-    }
+  const message =
+    truncate(String(text || ""));
+
+  if (!message.trim()) {
+    throw new Error(
+      "Message text is empty"
+    );
   }
 
-  return all;
-}
-
-function isUsefulNews(item) {
-  if (!item.title) {
-    return false;
-  }
-
-  if (
-    normalize(item.title)
-      .length < 15
-  ) {
-    return false;
-  }
-
-  if (!item.link) {
-    return false;
-  }
-
-  const blocked = [
-    "advertisement",
-    "sponsored",
-    "casino",
-    "betting",
-    "lottery"
-  ];
-
-  const title =
-    normalize(item.title);
-
-  return !blocked.some(
-    word =>
-      title.includes(word)
-  );
-}
-
-function newsScore(item) {
-  let score =
-    Number(item.trust || 0);
-
-  if (item.description) {
-    score += 5;
-  }
-
-  if (
-    item.title.length > 30
-  ) {
-    score += 5;
-  }
-
-  return score;
-}
-
-async function isDuplicate(
-  env,
-  item
-) {
-  if (!env.NEWS_CACHE) {
-    return false;
-  }
-
-  const key =
-    "news:" +
-    normalize(item.title);
-
-  return !!(
-    await env.NEWS_CACHE.get(
-      key
-    )
-  );
-}
-
-async function markPublished(
-  env,
-  item
-) {
-  if (!env.NEWS_CACHE) {
-    return;
-  }
-
-  const key =
-    "news:" +
-    normalize(item.title);
-
-  await env.NEWS_CACHE.put(
-    key,
-    JSON.stringify({
-      title:
-        item.title,
-      link:
-        item.link,
-      source:
-        item.source,
-      time:
-        new Date().toISOString()
-    }),
+  return telegram(
+    env,
+    "sendMessage",
     {
-      expirationTtl:
-        DEDUPE_HOURS *
-        60 *
-        60
+      chat_id: channelId,
+      text: message,
+      disable_web_page_preview: true
     }
   );
 }
 
-async function processWithAI(
+
+/* =========================================================
+   SEND HTML
+   ========================================================= */
+
+async function sendHtmlMessage(
   env,
-  item
+  html
 ) {
-  /*
-   * اگر AI تنظیم نشده باشد،
-   * Worker از عنوان و توضیح اصلی
-   * استفاده می‌کند.
-   */
+
+  const channelId =
+    getChannelId(env);
+
+  const message =
+    truncate(String(html || ""));
+
+  if (!message.trim()) {
+    throw new Error(
+      "HTML message is empty"
+    );
+  }
+
+  return telegram(
+    env,
+    "sendMessage",
+    {
+      chat_id: channelId,
+      text: message,
+      parse_mode: "HTML",
+      disable_web_page_preview: true
+    }
+  );
+}
+
+
+/* =========================================================
+   SEND PHOTO
+   ========================================================= */
+
+async function sendPhoto(
+  env,
+  photo,
+  caption = ""
+) {
+
+  const channelId =
+    getChannelId(env);
+
+  if (!photo) {
+    throw new Error(
+      "Photo URL is empty"
+    );
+  }
+
+  return telegram(
+    env,
+    "sendPhoto",
+    {
+      chat_id: channelId,
+      photo,
+      caption: truncate(caption, 1024),
+      parse_mode: "HTML"
+    }
+  );
+}
+
+
+/* =========================================================
+   SEND NEWS POST
+   ========================================================= */
+
+async function publishNews(
+  env,
+  {
+    title,
+    summary,
+    why,
+    source,
+    sourceUrl,
+    imageUrl,
+    credibility = 0,
+    tags = []
+  }
+) {
 
   if (
-    !env.AI_API_URL ||
-    !env.AI_API_KEY
+    !isAllowedContent({
+      title,
+      description: summary,
+      content: why,
+      source
+    })
   ) {
+
     return {
-      title:
-        item.title,
-
-      summary:
-        truncate(
-          item.description ||
-          item.title
-        ),
-
-      confidence: 0,
-
-      ai: false
+      ok: false,
+      skipped: true,
+      reason: "blocked-content"
     };
   }
 
-  const prompt = `
-You are the editorial AI for Global Pulse.
 
-Translate the following news into Persian.
+  const cleanTitle =
+    cleanText(title);
 
-Create:
-1. A strong but factual Persian headline.
-2. A concise Persian summary.
-3. Never invent facts.
-4. Keep names, numbers and dates accurate.
-5. Do not exaggerate.
-6. Return JSON only.
+  const cleanSummary =
+    cleanText(summary);
 
-Source:
-${item.source}
+  const cleanWhy =
+    cleanText(why);
 
-Title:
-${item.title}
+  const cleanSource =
+    cleanText(source);
 
-Description:
-${item.description}
+  const cleanUrl =
+    cleanText(sourceUrl);
 
-Return:
-{
-  "title": "...",
-  "summary": "...",
-  "confidence": 0
-}
-`;
 
-  const response =
-    await fetch(
-      env.AI_API_URL,
+  const duplicateKey =
+    await sha256(
+      `${cleanTitle}|${cleanSource}`
+    );
+
+
+  const post =
+`🌍 <b>GLOBAL PULSE</b>
+
+📰 <b>${escapeHtml(cleanTitle)}</b>
+
+${escapeHtml(cleanSummary)}
+
+💡 <b>Why it matters</b>
+${escapeHtml(cleanWhy)}
+
+🔎 <b>Source:</b> ${escapeHtml(cleanSource)}
+🛡️ <b>Source credibility:</b> ${Number(credibility) || 0}/100
+
+${cleanUrl ? `🔗 <a href="${escapeHtml(cleanUrl)}">Read the original source</a>` : ""}
+
+${tags.length
+  ? tags.map(
+      tag => `#${String(tag).replace(/\s+/g, "")}`
+    ).join(" ")
+  : "#GlobalPulse"
+}`;
+
+
+  /*
+   * اگر KV برای duplicate detection وجود داشته باشد
+   */
+
+  if (env.GLOBAL_PULSE_KV) {
+
+    const exists =
+      await env.GLOBAL_PULSE_KV.get(
+        `news:${duplicateKey}`
+      );
+
+    if (exists) {
+
+      return {
+        ok: false,
+        skipped: true,
+        reason: "duplicate"
+      };
+    }
+
+    await env.GLOBAL_PULSE_KV.put(
+      `news:${duplicateKey}`,
+      "published",
       {
-        method: "POST",
-
-        headers: {
-          "content-type":
-            "application/json",
-
-          "authorization":
-            `Bearer ${env.AI_API_KEY}`
-        },
-
-        body:
-          JSON.stringify({
-            prompt
-          })
+        expirationTtl:
+          CONFIG.DUPLICATE_TTL
       }
     );
+  }
 
-  if (!response.ok) {
-    throw new Error(
-      `AI HTTP ${response.status}`
+
+  /*
+   * اگر عکس وجود داشته باشد
+   * عکس + کپشن
+   */
+
+  if (imageUrl) {
+
+    const result =
+      await sendPhoto(
+        env,
+        imageUrl,
+        post
+      );
+
+    return {
+      ok: true,
+      type: "photo",
+      message_id:
+        result.result.message_id
+    };
+  }
+
+
+  /*
+   * بدون عکس
+   */
+
+  const result =
+    await sendHtmlMessage(
+      env,
+      post
     );
-  }
-
-  const data =
-    await response.json();
-
-  let result =
-    data.output ||
-    data;
-
-  if (
-    typeof result ===
-    "string"
-  ) {
-    result =
-      JSON.parse(result);
-  }
 
   return {
-    title:
-      result.title ||
-      item.title,
-
-    summary:
-      result.summary ||
-      truncate(
-        item.description ||
-        item.title
-      ),
-
-    confidence:
-      Number(
-        result.confidence ||
-        0
-      ),
-
-    ai: true
+    ok: true,
+    type: "text",
+    message_id:
+      result.result.message_id
   };
 }
 
-function buildPost(
-  item,
-  processed
+
+/* =========================================================
+   GLOBAL PRICE POST
+   ========================================================= */
+
+async function publishPriceComparison(
+  env,
+  {
+    product,
+    prices,
+    checkedDate,
+    source
+  }
 ) {
-  return (
-    `🌍 <b>GLOBAL PULSE</b>\n\n` +
 
-    `📰 <b>${escapeHtml(
-      processed.title
-    )}</b>\n\n` +
+  if (
+    !product ||
+    !Array.isArray(prices) ||
+    !prices.length
+  ) {
+    throw new Error(
+      "Invalid price comparison data"
+    );
+  }
 
-    `${escapeHtml(
-      truncate(
-        processed.summary,
-        900
+
+  const validPrices =
+    prices.filter(item =>
+      item &&
+      item.country &&
+      Number.isFinite(
+        Number(item.price)
       )
-    )}\n\n` +
+    );
 
-    `🔎 <b>منبع:</b> ${escapeHtml(
-      item.source
-    )}\n` +
 
-    `🛡️ <b>اعتبار منبع:</b> ${
-      item.trust
-    }/100\n\n` +
+  if (!validPrices.length) {
+    throw new Error(
+      "No valid prices"
+    );
+  }
 
-    `🔗 <a href="${item.link}">منبع اصلی خبر</a>\n\n` +
 
-    `#GlobalPulse`
+  validPrices.sort(
+    (a, b) =>
+      Number(a.price) -
+      Number(b.price)
+  );
+
+
+  const cheapest =
+    validPrices[0];
+
+
+  let lines = [
+    "🌍 <b>GLOBAL PRICE</b>",
+    "",
+    `🛒 <b>${escapeHtml(product)}</b>`,
+    ""
+  ];
+
+
+  for (const item of validPrices) {
+
+    lines.push(
+      `${escapeHtml(item.flag || "🌎")} ` +
+      `<b>${escapeHtml(item.country)}</b> — ` +
+      `$${Number(item.price).toLocaleString()}`
+    );
+  }
+
+
+  lines.push(
+    "",
+    `🏆 <b>CHEAPEST:</b> ${escapeHtml(
+      cheapest.country
+    )}`,
+    `💰 <b>Price:</b> $${Number(
+      cheapest.price
+    ).toLocaleString()}`,
+    `📅 <b>Checked:</b> ${escapeHtml(
+      checkedDate || new Date().toISOString().slice(0, 10)
+    )}`,
+    `🔎 <b>Source:</b> ${escapeHtml(
+      source || "Verified source"
+    )}`,
+    "",
+    "#GlobalPulse #GlobalPrice"
+  );
+
+
+  return sendHtmlMessage(
+    env,
+    lines.join("\n")
   );
 }
 
-async function publishNews(env) {
-  const collected =
-    await collectNews();
 
-  const useful =
-    collected
-      .filter(isUsefulNews)
-      .sort(
-        (a, b) =>
-          newsScore(b) -
-          newsScore(a)
-      );
+/* =========================================================
+   COUNTRY BATTLE
+   ========================================================= */
 
-  const published = [];
+async function publishCountryBattle(
+  env,
+  {
+    title,
+    items,
+    winner,
+    source
+  }
+) {
 
-  for (
-    const item of useful
+  if (
+    !title ||
+    !Array.isArray(items) ||
+    !items.length
   ) {
-    if (
-      published.length >=
-      MAX_POSTS_PER_RUN
-    ) {
-      break;
-    }
-
-    if (
-      await isDuplicate(
-        env,
-        item
-      )
-    ) {
-      continue;
-    }
-
-    try {
-
-      const processed =
-        await processWithAI(
-          env,
-          item
-        );
-
-      const post =
-        buildPost(
-          item,
-          processed
-        );
-
-      const result =
-        await sendHtmlMessage(
-          env,
-          post
-        );
-
-      await markPublished(
-        env,
-        item
-      );
-
-      published.push({
-        source:
-          item.source,
-
-        title:
-          processed.title,
-
-        message_id:
-          result.result.message_id,
-
-        score:
-          newsScore(item),
-
-        ai:
-          processed.ai
-      });
-
-    } catch (error) {
-
-      console.error(
-        JSON.stringify({
-          type:
-            "publish_error",
-
-          title:
-            item.title,
-
-          error:
-            error.message
-        })
-      );
-    }
+    throw new Error(
+      "Invalid country battle data"
+    );
   }
 
-  return {
-    collected:
-      collected.length,
 
-    useful:
-      useful.length,
+  const blocked =
+    items.some(item =>
+      containsBlockedContent(
+        `${item.country || ""} ${item.value || ""}`
+      )
+    );
 
-    published
-  };
+
+  if (blocked) {
+
+    return {
+      ok: false,
+      skipped: true,
+      reason: "blocked-country"
+    };
+  }
+
+
+  const lines = [
+    "🌍 <b>COUNTRY BATTLE</b>",
+    "",
+    `⚔️ <b>${escapeHtml(title)}</b>`,
+    ""
+  ];
+
+
+  for (const item of items) {
+
+    lines.push(
+      `${escapeHtml(item.flag || "🌎")} ` +
+      `<b>${escapeHtml(item.country)}</b> — ` +
+      `${escapeHtml(item.value)}`
+    );
+  }
+
+
+  if (winner) {
+
+    lines.push(
+      "",
+      `🏆 <b>WINNER:</b> ${escapeHtml(winner)}`
+    );
+  }
+
+
+  lines.push(
+    "",
+    `🔎 <b>Source:</b> ${escapeHtml(
+      source || "Verified source"
+    )}`,
+    "",
+    "#GlobalPulse #CountryBattle"
+  );
+
+
+  return sendHtmlMessage(
+    env,
+    lines.join("\n")
+  );
 }
+
+
+/* =========================================================
+   GLOBAL TREND
+   ========================================================= */
+
+async function publishTrend(
+  env,
+  {
+    title,
+    topic,
+    countries,
+    growth,
+    why,
+    source
+  }
+) {
+
+  if (
+    containsBlockedContent(
+      `${title} ${topic} ${why} ${countries?.join(" ")}`
+    )
+  ) {
+
+    return {
+      ok: false,
+      skipped: true,
+      reason: "blocked-content"
+    };
+  }
+
+
+  const countryText =
+    Array.isArray(countries)
+      ? countries
+          .map(
+            item =>
+              `${item.flag || "🌎"} ${item.name || item}`
+          )
+          .join(" · ")
+      : "";
+
+
+  const post = [
+    "🔥 <b>GLOBAL TREND</b>",
+    "",
+    `📈 <b>${escapeHtml(title || topic)}</b>`,
+    "",
+    countryText
+      ? `🌍 <b>Top markets:</b>\n${escapeHtml(countryText)}`
+      : "",
+    growth
+      ? `📊 <b>Growth:</b> ${escapeHtml(growth)}`
+      : "",
+    "",
+    `💡 <b>Why it matters</b>\n${escapeHtml(why || "")}`,
+    "",
+    `🔎 <b>Source:</b> ${escapeHtml(
+      source || "Verified source"
+    )}`,
+    "",
+    "#GlobalPulse #GlobalTrend"
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+
+  return sendHtmlMessage(
+    env,
+    post
+  );
+}
+
+
+/* =========================================================
+   CUSTOM POST
+   ========================================================= */
+
+async function publishCustom(
+  env,
+  body
+) {
+
+  const text =
+    body.text ||
+    body.message ||
+    "";
+
+  if (!text) {
+
+    throw new Error(
+      "text or message is required"
+    );
+  }
+
+
+  if (
+    containsBlockedContent(text)
+  ) {
+
+    return {
+      ok: false,
+      skipped: true,
+      reason: "blocked-content"
+    };
+  }
+
+
+  return sendMessage(
+    env,
+    text
+  );
+}
+
+
+/* =========================================================
+   REQUEST JSON
+   ========================================================= */
+
+async function readJson(request) {
+
+  try {
+
+    return await request.json();
+
+  } catch {
+
+    return {};
+  }
+}
+
+
+/* =========================================================
+   MAIN
+   ========================================================= */
 
 export default {
 
-  async fetch(
-    request,
-    env
-  ) {
+  async fetch(request, env) {
+
     const url =
       new URL(request.url);
 
+
     try {
+
+
+      /* =====================================================
+         HEALTH
+      ===================================================== */
 
       if (
         request.method === "GET" &&
         url.pathname === "/"
       ) {
+
         return json({
+
           ok: true,
 
           service:
-            "Global Pulse",
+            CONFIG.SERVICE,
 
           worker:
-            "telegram-auto-channel",
+            CONFIG.WORKER,
 
           status:
             "online",
 
+          time:
+            new Date().toISOString(),
+
           telegram: {
+
             telegram_bot_token:
               !!env.TELEGRAM_BOT_TOKEN,
 
@@ -646,32 +831,48 @@ export default {
               !!env.TELEGRAM_CHANNEL_ID,
 
             channel_id:
-              env.TELEGRAM_CHANNEL_ID ||
-              null
+              env.TELEGRAM_CHANNEL_ID || null
           },
 
-          ai: {
-            configured:
-              !!(
-                env.AI_API_URL &&
-                env.AI_API_KEY
-              )
-          },
+          features: {
 
-          news_cache:
-            !!env.NEWS_CACHE,
+            news:
+              true,
 
-          time:
-            new Date().toISOString()
+            price:
+              true,
+
+            country_battle:
+              true,
+
+            trends:
+              true,
+
+            iran_filter:
+              true,
+
+            duplicate_filter:
+              !!env.GLOBAL_PULSE_KV,
+
+            image_posts:
+              true
+          }
+
         });
       }
 
+
+      /* =====================================================
+         DEBUG ENV
+      ===================================================== */
+
       if (
         request.method === "GET" &&
-        url.pathname ===
-          "/debug-env"
+        url.pathname === "/debug-env"
       ) {
+
         return json({
+
           ok: true,
 
           telegram_bot_token:
@@ -681,36 +882,37 @@ export default {
             !!env.TELEGRAM_CHANNEL_ID,
 
           channel_id:
-            env.TELEGRAM_CHANNEL_ID ||
-            null,
+            env.TELEGRAM_CHANNEL_ID || null,
 
-          ai_api:
-            !!env.AI_API_URL,
-
-          ai_key:
-            !!env.AI_API_KEY,
-
-          news_cache:
-            !!env.NEWS_CACHE,
+          kv:
+            !!env.GLOBAL_PULSE_KV,
 
           env_keys:
             Object.keys(env)
         });
       }
 
+
+      /* =====================================================
+         TELEGRAM BOT
+      ===================================================== */
+
       if (
         request.method === "GET" &&
-        url.pathname ===
-          "/test-telegram"
+        url.pathname === "/test-telegram"
       ) {
+
         const me =
           await telegram(
             env,
             "getMe"
           );
 
+
         return json({
+
           ok: true,
+
           bot:
             me.result,
 
@@ -720,22 +922,41 @@ export default {
         });
       }
 
+
+      /* =====================================================
+         TEST CHANNEL
+      ===================================================== */
+
       if (
         request.method === "GET" &&
-        url.pathname ===
-          "/test-channel"
+        url.pathname === "/test-channel"
       ) {
+
+        const message = [
+          "🌍 Global Pulse",
+          "",
+          "✅ Worker connected to Telegram.",
+          "",
+          "🤖 Global Pulse Assistant",
+          "⚙️ Global publishing system is ready.",
+          "",
+          "📰 Global News",
+          "💰 Global Price",
+          "⚔️ Country Battle",
+          "🔥 Global Trend",
+          "🏠 Cost of Living"
+        ].join("\n");
+
+
         const result =
           await sendMessage(
             env,
-
-            "🌍 Global Pulse\n\n" +
-            "✅ اتصال Worker به کانال برقرار است.\n\n" +
-            "🤖 Global Pulse Assistant\n" +
-            "⚙️ سیستم انتشار خودکار آماده است."
+            message
           );
 
+
         return json({
+
           ok: true,
 
           message_id:
@@ -746,90 +967,78 @@ export default {
         });
       }
 
-      if (
-        request.method === "GET" &&
-        url.pathname ===
-          "/scan"
-      ) {
-        const news =
-          await collectNews();
 
-        return json({
-          ok: true,
-
-          count:
-            news.length,
-
-          news:
-            news.map(item => ({
-              source:
-                item.source,
-
-              title:
-                item.title,
-
-              link:
-                item.link,
-
-              trust:
-                item.trust,
-
-              score:
-                newsScore(item)
-            }))
-        });
-      }
-
-      if (
-        request.method === "GET" &&
-        url.pathname ===
-          "/publish"
-      ) {
-        const result =
-          await publishNews(
-            env
-          );
-
-        return json({
-          ok: true,
-          ...result
-        });
-      }
+      /* =====================================================
+         CUSTOM SEND
+         POST /send
+      ===================================================== */
 
       if (
         request.method === "POST" &&
         url.pathname === "/send"
       ) {
-        let body = {};
 
-        try {
-          body =
-            await request.json();
-        } catch {}
+        const body =
+          await readJson(request);
 
-        const text =
+
+        const result =
+          await publishCustom(
+            env,
+            body
+          );
+
+
+        return json({
+          ...result,
+          channel_id:
+            env.TELEGRAM_CHANNEL_ID
+        });
+      }
+
+
+      /* =====================================================
+         SEND HTML
+         POST /send-html
+      ===================================================== */
+
+      if (
+        request.method === "POST" &&
+        url.pathname === "/send-html"
+      ) {
+
+        const body =
+          await readJson(request);
+
+
+        const html =
+          body.html ||
           body.text ||
-          body.message ||
           "";
 
-        if (!text) {
+
+        if (!html) {
+
           return json(
             {
               ok: false,
               error:
-                "text or message is required"
+                "html or text is required"
             },
             400
           );
         }
 
+
         const result =
-          await sendMessage(
+          await sendHtmlMessage(
             env,
-            text
+            html
           );
 
+
         return json({
+
           ok: true,
 
           message_id:
@@ -840,13 +1049,128 @@ export default {
         });
       }
 
+
+      /* =====================================================
+         SEND NEWS
+         POST /publish-news
+      ===================================================== */
+
       if (
         request.method === "POST" &&
-        url.pathname ===
-          "/telegram-webhook"
+        url.pathname === "/publish-news"
       ) {
+
+        const body =
+          await readJson(request);
+
+
+        const result =
+          await publishNews(
+            env,
+            body
+          );
+
+
+        return json(result);
+      }
+
+
+      /* =====================================================
+         GLOBAL PRICE
+         POST /publish-price
+      ===================================================== */
+
+      if (
+        request.method === "POST" &&
+        url.pathname === "/publish-price"
+      ) {
+
+        const body =
+          await readJson(request);
+
+
+        const result =
+          await publishPriceComparison(
+            env,
+            body
+          );
+
+
+        return json({
+
+          ok: true,
+
+          message_id:
+            result.result.message_id,
+
+          channel_id:
+            env.TELEGRAM_CHANNEL_ID
+        });
+      }
+
+
+      /* =====================================================
+         COUNTRY BATTLE
+         POST /publish-country-battle
+      ===================================================== */
+
+      if (
+        request.method === "POST" &&
+        url.pathname === "/publish-country-battle"
+      ) {
+
+        const body =
+          await readJson(request);
+
+
+        const result =
+          await publishCountryBattle(
+            env,
+            body
+          );
+
+
+        return json(result);
+      }
+
+
+      /* =====================================================
+         GLOBAL TREND
+         POST /publish-trend
+      ===================================================== */
+
+      if (
+        request.method === "POST" &&
+        url.pathname === "/publish-trend"
+      ) {
+
+        const body =
+          await readJson(request);
+
+
+        const result =
+          await publishTrend(
+            env,
+            body
+          );
+
+
+        return json(result);
+      }
+
+
+      /* =====================================================
+         WEBHOOK
+      ===================================================== */
+
+      if (
+        request.method === "POST" &&
+        url.pathname === "/telegram-webhook"
+      ) {
+
         const update =
           await request.json();
+
 
         console.log(
           JSON.stringify({
@@ -859,19 +1183,26 @@ export default {
           })
         );
 
+
         return json({
           ok: true
         });
       }
 
+
+      /* =====================================================
+         404
+      ===================================================== */
+
       return json(
         {
           ok: false,
-          error:
-            "Not Found"
+          error: "Not Found",
+          path: url.pathname
         },
         404
       );
+
 
     } catch (error) {
 
@@ -886,6 +1217,7 @@ export default {
         })
       );
 
+
       return json(
         {
           ok: false,
@@ -897,45 +1229,5 @@ export default {
         500
       );
     }
-  },
-
-  async scheduled(
-    event,
-    env,
-    ctx
-  ) {
-    ctx.waitUntil(
-      (async () => {
-        try {
-
-          const result =
-            await publishNews(
-              env
-            );
-
-          console.log(
-            JSON.stringify({
-              type:
-                "scheduled_publish",
-
-              result
-            })
-          );
-
-        } catch (error) {
-
-          console.error(
-            JSON.stringify({
-              type:
-                "scheduled_error",
-
-              error:
-                error.message ||
-                String(error)
-            })
-          );
-        }
-      })()
-    );
   }
 };
