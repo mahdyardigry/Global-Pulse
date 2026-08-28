@@ -1,10 +1,32 @@
 const BYBIT = "https://api.bybit.com";
-const VERSION = "GLOBAL-PULSE-CRYPTO-DEEP-V2";
+const VERSION = "GLOBAL-PULSE-CRYPTO-DEEP-V3";
 
 const KLINE_LIMIT = 200;
 const TRADE_LIMIT = 1000;
 const ORDERBOOK_LIMIT = 50;
 const LIVE_CHART_LIMIT = 120;
+
+/* =========================================================
+   ALL TIMEFRAMES
+========================================================= */
+
+const TIMEFRAMES = [
+  { key: "1m",  interval: "1",   label: "1 Minute" },
+  { key: "3m",  interval: "3",   label: "3 Minutes" },
+  { key: "5m",  interval: "5",   label: "5 Minutes" },
+  { key: "15m", interval: "15",  label: "15 Minutes" },
+  { key: "30m", interval: "30",  label: "30 Minutes" },
+  { key: "1h",  interval: "60",  label: "1 Hour" },
+  { key: "2h",  interval: "120", label: "2 Hours" },
+  { key: "4h",  interval: "240", label: "4 Hours" },
+  { key: "6h",  interval: "360", label: "6 Hours" },
+  { key: "12h", interval: "720", label: "12 Hours" },
+  { key: "1D",  interval: "D",   label: "1 Day" }
+];
+
+const ALLOWED_INTERVALS = TIMEFRAMES.map(
+  x => x.interval
+);
 
 const BLOCKED = [
   "iran",
@@ -54,19 +76,29 @@ function upper(v) {
 
 function blocked(text) {
   const s = clean(text).toLowerCase();
-  return BLOCKED.some(x => s.includes(x.toLowerCase()));
+  return BLOCKED.some(x =>
+    s.includes(x.toLowerCase())
+  );
 }
 
 function avg(arr) {
   if (!arr.length) return 0;
-  return arr.reduce((a, b) => a + b, 0) / arr.length;
+
+  return arr.reduce(
+    (a, b) => a + b,
+    0
+  ) / arr.length;
 }
 
 function median(arr) {
   if (!arr.length) return 0;
 
-  const a = [...arr].sort((x, y) => x - y);
-  const m = Math.floor(a.length / 2);
+  const a = [...arr].sort(
+    (x, y) => x - y
+  );
+
+  const m =
+    Math.floor(a.length / 2);
 
   return a.length % 2
     ? a[m]
@@ -75,12 +107,17 @@ function median(arr) {
 
 function pct(a, b) {
   if (!b) return 0;
-  return ((a - b) / b) * 100;
+
+  return (
+    (a - b) /
+    b
+  ) * 100;
 }
 
 function round(v, d = 2) {
   const n = num(v);
   const p = Math.pow(10, d);
+
   return Math.round(n * p) / p;
 }
 
@@ -90,20 +127,29 @@ function formatPrice(v) {
   if (!n) return "0";
 
   if (n >= 1000) {
-    return n.toLocaleString("en-US", {
-      maximumFractionDigits: 2
-    });
+    return n.toLocaleString(
+      "en-US",
+      {
+        maximumFractionDigits: 2
+      }
+    );
   }
 
   if (n >= 1) {
-    return n.toLocaleString("en-US", {
-      maximumFractionDigits: 4
-    });
+    return n.toLocaleString(
+      "en-US",
+      {
+        maximumFractionDigits: 4
+      }
+    );
   }
 
-  return n.toLocaleString("en-US", {
-    maximumFractionDigits: 8
-  });
+  return n.toLocaleString(
+    "en-US",
+    {
+      maximumFractionDigits: 8
+    }
+  );
 }
 
 function htmlEscape(v) {
@@ -133,28 +179,35 @@ async function bybit(path, params = {}) {
     }
   }
 
-  const query = qs.toString();
+  const query =
+    qs.toString();
 
   const url =
     query
       ? `${BYBIT}${path}?${query}`
       : `${BYBIT}${path}`;
 
-  const r = await fetch(url, {
-    headers: {
-      "accept": "application/json"
-    }
-  });
+  const r =
+    await fetch(url, {
+      headers: {
+        "accept": "application/json"
+      }
+    });
 
   if (!r.ok) {
-    throw new Error(`Bybit HTTP ${r.status}`);
+    throw new Error(
+      `Bybit HTTP ${r.status}`
+    );
   }
 
-  const data = await r.json();
+  const data =
+    await r.json();
 
   if (data.retCode !== 0) {
     throw new Error(
-      `Bybit ${data.retCode}: ${data.retMsg || "API error"}`
+      `Bybit ${data.retCode}: ${
+        data.retMsg || "API error"
+      }`
     );
   }
 
@@ -182,14 +235,19 @@ async function findSymbol(input) {
   let symbol = raw;
 
   if (!symbol.endsWith("USDT")) {
-    symbol = `${symbol}USDT`;
+    symbol =
+      `${symbol}USDT`;
   }
 
   async function searchCategory(category) {
 
     let cursor = "";
 
-    for (let page = 0; page < 10; page++) {
+    for (
+      let page = 0;
+      page < 10;
+      page++
+    ) {
 
       const params = {
         category,
@@ -221,8 +279,9 @@ async function findSymbol(input) {
           : [];
 
       let item =
-        list.find(x =>
-          upper(x.symbol) === symbol
+        list.find(
+          x =>
+            upper(x.symbol) === symbol
         );
 
       if (item) {
@@ -232,9 +291,10 @@ async function findSymbol(input) {
       if (!raw.endsWith("USDT")) {
 
         item =
-          list.find(x =>
-            upper(x.baseCoin) === raw &&
-            upper(x.quoteCoin) === "USDT"
+          list.find(
+            x =>
+              upper(x.baseCoin) === raw &&
+              upper(x.quoteCoin) === "USDT"
           );
 
         if (item) {
@@ -256,7 +316,9 @@ async function findSymbol(input) {
   /* Futures first */
 
   const futuresItem =
-    await searchCategory("linear");
+    await searchCategory(
+      "linear"
+    );
 
   if (futuresItem) {
 
@@ -265,9 +327,12 @@ async function findSymbol(input) {
       category: "linear",
       market: "Futures",
       symbol: futuresItem.symbol,
-      baseCoin: futuresItem.baseCoin || "",
-      quoteCoin: futuresItem.quoteCoin || "",
-      contractType: futuresItem.contractType || "",
+      baseCoin:
+        futuresItem.baseCoin || "",
+      quoteCoin:
+        futuresItem.quoteCoin || "",
+      contractType:
+        futuresItem.contractType || "",
       raw: futuresItem
     };
   }
@@ -275,7 +340,9 @@ async function findSymbol(input) {
   /* Spot */
 
   const spotItem =
-    await searchCategory("spot");
+    await searchCategory(
+      "spot"
+    );
 
   if (spotItem) {
 
@@ -284,8 +351,10 @@ async function findSymbol(input) {
       category: "spot",
       market: "Spot",
       symbol: spotItem.symbol,
-      baseCoin: spotItem.baseCoin || "",
-      quoteCoin: spotItem.quoteCoin || "",
+      baseCoin:
+        spotItem.baseCoin || "",
+      quoteCoin:
+        spotItem.quoteCoin || "",
       contractType: "",
       raw: spotItem
     };
@@ -323,18 +392,116 @@ async function getKlines(
   limit = KLINE_LIMIT
 ) {
 
+  const safeInterval =
+    ALLOWED_INTERVALS.includes(
+      String(interval)
+    )
+      ? String(interval)
+      : "1";
+
+  const safeLimit =
+    Math.max(
+      20,
+      Math.min(
+        1000,
+        num(limit, KLINE_LIMIT)
+      )
+    );
+
   const result =
     await bybit(
       "/v5/market/kline",
       {
         category,
         symbol,
-        interval,
-        limit
+        interval: safeInterval,
+        limit: safeLimit
       }
     );
 
-  return parseKlines(result.list);
+  return parseKlines(
+    result.list
+  );
+}
+
+/* =========================================================
+   ALL TIMEFRAME DATA
+========================================================= */
+
+async function getAllTimeframes(
+  category,
+  symbol
+) {
+
+  const results = {};
+
+  /*
+   * همه تایم‌فریم‌ها را موازی دریافت می‌کنیم
+   * تا تحلیل کامل‌تر و سریع‌تر باشد.
+   */
+
+  const requests =
+    TIMEFRAMES.map(
+      async tf => {
+
+        try {
+
+          const candles =
+            await getKlines(
+              category,
+              symbol,
+              tf.interval,
+              KLINE_LIMIT
+            );
+
+          const trend =
+            candles.length
+              ? trendAnalysis(candles)
+              : null;
+
+          return {
+            key: tf.key,
+            interval:
+              tf.interval,
+            label:
+              tf.label,
+            available:
+              candles.length > 0,
+            candles,
+            trend
+          };
+
+        } catch (error) {
+
+          return {
+            key: tf.key,
+            interval:
+              tf.interval,
+            label:
+              tf.label,
+            available: false,
+            candles: [],
+            trend: null,
+            error:
+              error.message ||
+              String(error)
+          };
+        }
+      }
+    );
+
+  const data =
+    await Promise.all(
+      requests
+    );
+
+  for (const item of data) {
+
+    results[item.key] =
+      item;
+  }
+
+  return results;
 }
 
 /* =========================================================
@@ -353,26 +520,38 @@ async function getLiveChartData(
       20,
       Math.min(
         1000,
-        num(limit, LIVE_CHART_LIMIT)
+        num(
+          limit,
+          LIVE_CHART_LIMIT
+        )
       )
     );
+
+  const safeInterval =
+    ALLOWED_INTERVALS.includes(
+      String(interval)
+    )
+      ? String(interval)
+      : "1";
 
   const candles =
     await getKlines(
       category,
       symbol,
-      interval,
+      safeInterval,
       safeLimit
     );
 
-  return candles.map(c => ({
-    time: c.time,
-    open: c.open,
-    high: c.high,
-    low: c.low,
-    close: c.close,
-    volume: c.volume
-  }));
+  return candles.map(
+    c => ({
+      time: c.time,
+      open: c.open,
+      high: c.high,
+      low: c.low,
+      close: c.close,
+      volume: c.volume
+    })
+  );
 }
 
 /* =========================================================
@@ -381,7 +560,9 @@ async function getLiveChartData(
 
 function sma(values, period) {
 
-  if (values.length < period) {
+  if (
+    values.length < period
+  ) {
     return null;
   }
 
@@ -394,7 +575,9 @@ function sma(values, period) {
 
 function ema(values, period) {
 
-  if (values.length < period) {
+  if (
+    values.length < period
+  ) {
     return null;
   }
 
@@ -402,7 +585,12 @@ function ema(values, period) {
     2 / (period + 1);
 
   let e =
-    avg(values.slice(0, period));
+    avg(
+      values.slice(
+        0,
+        period
+      )
+    );
 
   for (
     let i = period;
@@ -418,9 +606,15 @@ function ema(values, period) {
   return e;
 }
 
-function rsi(values, period = 14) {
+function rsi(
+  values,
+  period = 14
+) {
 
-  if (values.length < period + 1) {
+  if (
+    values.length <
+    period + 1
+  ) {
     return null;
   }
 
@@ -468,31 +662,44 @@ function rsi(values, period = 14) {
 
     avgGain =
       (
-        avgGain * (period - 1) +
+        avgGain *
+        (period - 1) +
         g
       ) / period;
 
     avgLoss =
       (
-        avgLoss * (period - 1) +
+        avgLoss *
+        (period - 1) +
         l
       ) / period;
   }
 
-  if (avgLoss === 0) {
+  if (
+    avgLoss === 0
+  ) {
     return 100;
   }
 
   const rs =
-    avgGain / avgLoss;
+    avgGain /
+    avgLoss;
 
-  return 100 -
-    100 / (1 + rs);
+  return (
+    100 -
+    100 / (1 + rs)
+  );
 }
 
-function atr(candles, period = 14) {
+function atr(
+  candles,
+  period = 14
+) {
 
-  if (candles.length < period + 1) {
+  if (
+    candles.length <
+    period + 1
+  ) {
     return null;
   }
 
@@ -514,10 +721,12 @@ function atr(candles, period = 14) {
       Math.max(
         c.high - c.low,
         Math.abs(
-          c.high - p.close
+          c.high -
+          p.close
         ),
         Math.abs(
-          c.low - p.close
+          c.low -
+          p.close
         )
       )
     );
@@ -530,7 +739,9 @@ function atr(candles, period = 14) {
 
 function macd(values) {
 
-  if (values.length < 35) {
+  if (
+    values.length < 35
+  ) {
     return null;
   }
 
@@ -550,9 +761,14 @@ function macd(values) {
   return fast - slow;
 }
 
-function bollinger(values, period = 20) {
+function bollinger(
+  values,
+  period = 20
+) {
 
-  if (values.length < period) {
+  if (
+    values.length < period
+  ) {
     return null;
   }
 
@@ -564,24 +780,32 @@ function bollinger(values, period = 20) {
 
   const variance =
     avg(
-      data.map(x =>
-        Math.pow(
-          x - mean,
-          2
-        )
+      data.map(
+        x =>
+          Math.pow(
+            x - mean,
+            2
+          )
       )
     );
 
   const sd =
-    Math.sqrt(variance);
+    Math.sqrt(
+      variance
+    );
 
   return {
     middle: mean,
-    upper: mean + sd * 2,
-    lower: mean - sd * 2,
+    upper:
+      mean + sd * 2,
+    lower:
+      mean - sd * 2,
     width:
       mean
-        ? ((sd * 4) / mean) * 100
+        ? (
+            (sd * 4) /
+            mean
+          ) * 100
         : 0
   };
 }
@@ -590,7 +814,9 @@ function bollinger(values, period = 20) {
    TREND
 ========================================================= */
 
-function trendAnalysis(candles) {
+function trendAnalysis(
+  candles
+) {
 
   const closes =
     candles.map(
@@ -603,27 +829,41 @@ function trendAnalysis(candles) {
     ];
 
   const ma20 =
-    sma(closes, 20);
+    sma(
+      closes,
+      20
+    );
 
   const ma50 =
-    sma(closes, 50);
+    sma(
+      closes,
+      50
+    );
 
   const ma100 =
-    sma(closes, 100);
+    sma(
+      closes,
+      100
+    );
 
   let direction =
     "NEUTRAL";
 
   let score = 50;
 
-  if (ma20 && ma50) {
+  if (
+    ma20 &&
+    ma50
+  ) {
 
     if (
       price > ma20 &&
       ma20 > ma50
     ) {
 
-      direction = "BULLISH";
+      direction =
+        "BULLISH";
+
       score = 80;
 
     } else if (
@@ -631,21 +871,27 @@ function trendAnalysis(candles) {
       ma20 < ma50
     ) {
 
-      direction = "BEARISH";
+      direction =
+        "BEARISH";
+
       score = 20;
 
     } else if (
       price > ma20
     ) {
 
-      direction = "BULLISH";
+      direction =
+        "BULLISH";
+
       score = 65;
 
     } else if (
       price < ma20
     ) {
 
-      direction = "BEARISH";
+      direction =
+        "BEARISH";
+
       score = 35;
     }
   }
@@ -664,9 +910,13 @@ function trendAnalysis(candles) {
    SUPPORT / RESISTANCE
 ========================================================= */
 
-function supportResistance(candles) {
+function supportResistance(
+  candles
+) {
 
-  if (candles.length < 30) {
+  if (
+    candles.length < 30
+  ) {
 
     return {
       supports: [],
@@ -742,8 +992,12 @@ function supportResistance(candles) {
       )
       .sort(
         (a, b) =>
-          Math.abs(price - a.price) -
-          Math.abs(price - b.price)
+          Math.abs(
+            price - a.price
+          ) -
+          Math.abs(
+            price - b.price
+          )
       )
       .slice(0, 5);
 
@@ -759,8 +1013,12 @@ function supportResistance(candles) {
       )
       .sort(
         (a, b) =>
-          Math.abs(price - a.price) -
-          Math.abs(price - b.price)
+          Math.abs(
+            price - a.price
+          ) -
+          Math.abs(
+            price - b.price
+          )
       )
       .slice(0, 5);
 
@@ -774,14 +1032,19 @@ function supportResistance(candles) {
    LIQUIDITY / HUNT
 ========================================================= */
 
-function liquidityHunt(candles) {
+function liquidityHunt(
+  candles
+) {
 
-  if (candles.length < 20) {
+  if (
+    candles.length < 20
+  ) {
 
     return {
       detected: false,
       type: "NONE",
-      reason: "Insufficient data"
+      reason:
+        "Insufficient data"
     };
   }
 
@@ -791,7 +1054,10 @@ function liquidityHunt(candles) {
     ];
 
   const previous =
-    candles.slice(-20, -1);
+    candles.slice(
+      -20,
+      -1
+    );
 
   const previousHigh =
     Math.max(
@@ -808,32 +1074,44 @@ function liquidityHunt(candles) {
     );
 
   const bullishSweep =
-    current.low < previousLow &&
-    current.close > previousLow;
+    current.low <
+      previousLow &&
+    current.close >
+      previousLow;
 
   const bearishSweep =
-    current.high > previousHigh &&
-    current.close < previousHigh;
+    current.high >
+      previousHigh &&
+    current.close <
+      previousHigh;
 
-  if (bullishSweep) {
+  if (
+    bullishSweep
+  ) {
 
     return {
       detected: true,
-      type: "BULLISH LIQUIDITY SWEEP",
+      type:
+        "BULLISH LIQUIDITY SWEEP",
       reason:
         "Price swept the previous low and closed back above it.",
-      level: previousLow
+      level:
+        previousLow
     };
   }
 
-  if (bearishSweep) {
+  if (
+    bearishSweep
+  ) {
 
     return {
       detected: true,
-      type: "BEARISH LIQUIDITY SWEEP",
+      type:
+        "BEARISH LIQUIDITY SWEEP",
       reason:
         "Price swept the previous high and closed back below it.",
-      level: previousHigh
+      level:
+        previousHigh
     };
   }
 
@@ -860,7 +1138,8 @@ async function footprint(
       {
         category,
         symbol,
-        limit: TRADE_LIMIT
+        limit:
+          TRADE_LIMIT
       }
     );
 
@@ -875,7 +1154,9 @@ async function footprint(
 
   const notionals = [];
 
-  for (const t of trades) {
+  for (
+    const t of trades
+  ) {
 
     const qty =
       num(t.size);
@@ -892,16 +1173,19 @@ async function footprint(
 
     if (
       String(t.side)
-        .toLowerCase() === "buy"
+        .toLowerCase() ===
+      "buy"
     ) {
 
       buyVolume += qty;
-      buyNotional += notional;
+      buyNotional +=
+        notional;
 
     } else {
 
       sellVolume += qty;
-      sellNotional += notional;
+      sellNotional +=
+        notional;
     }
   }
 
@@ -915,7 +1199,10 @@ async function footprint(
 
   const deltaPercent =
     total
-      ? (delta / total) * 100
+      ? (
+          delta /
+          total
+        ) * 100
       : 0;
 
   const med =
@@ -927,7 +1214,9 @@ async function footprint(
   let largeBuy = 0;
   let largeSell = 0;
 
-  for (const t of trades) {
+  for (
+    const t of trades
+  ) {
 
     const qty =
       num(t.size);
@@ -939,14 +1228,16 @@ async function footprint(
       qty * price;
 
     if (
-      n < largeThreshold
+      n <
+      largeThreshold
     ) {
       continue;
     }
 
     if (
       String(t.side)
-        .toLowerCase() === "buy"
+        .toLowerCase() ===
+      "buy"
     ) {
 
       largeBuy += n;
@@ -976,16 +1267,27 @@ async function footprint(
   }
 
   return {
-    trades: trades.length,
+    trades:
+      trades.length,
+
     buyVolume,
+
     sellVolume,
+
     buyNotional,
+
     sellNotional,
+
     delta,
+
     deltaPercent,
+
     largeBuy,
+
     largeSell,
+
     largeThreshold,
+
     pressure
   };
 }
@@ -1005,7 +1307,8 @@ async function orderBook(
       {
         category,
         symbol,
-        limit: ORDERBOOK_LIMIT
+        limit:
+          ORDERBOOK_LIMIT
       }
     );
 
@@ -1018,14 +1321,18 @@ async function orderBook(
   let bidLiquidity = 0;
   let askLiquidity = 0;
 
-  for (const b of bids) {
+  for (
+    const b of bids
+  ) {
 
     bidLiquidity +=
       num(b[0]) *
       num(b[1]);
   }
 
-  for (const a of asks) {
+  for (
+    const a of asks
+  ) {
 
     askLiquidity +=
       num(a[0]) *
@@ -1038,16 +1345,18 @@ async function orderBook(
 
   const buyShare =
     total
-      ? bidLiquidity /
-        total *
-        100
+      ? (
+          bidLiquidity /
+          total
+        ) * 100
       : 50;
 
   const sellShare =
     total
-      ? askLiquidity /
-        total *
-        100
+      ? (
+          askLiquidity /
+          total
+        ) * 100
       : 50;
 
   let pressure =
@@ -1072,13 +1381,17 @@ async function orderBook(
 
   const buyWalls =
     bids
-      .map(x => ({
-        price: num(x[0]),
-        quantity: num(x[1]),
-        value:
-          num(x[0]) *
-          num(x[1])
-      }))
+      .map(
+        x => ({
+          price:
+            num(x[0]),
+          quantity:
+            num(x[1]),
+          value:
+            num(x[0]) *
+            num(x[1])
+        })
+      )
       .sort(
         (a, b) =>
           b.value -
@@ -1088,13 +1401,17 @@ async function orderBook(
 
   const sellWalls =
     asks
-      .map(x => ({
-        price: num(x[0]),
-        quantity: num(x[1]),
-        value:
-          num(x[0]) *
-          num(x[1])
-      }))
+      .map(
+        x => ({
+          price:
+            num(x[0]),
+          quantity:
+            num(x[1]),
+          value:
+            num(x[0]) *
+            num(x[1])
+        })
+      )
       .sort(
         (a, b) =>
           b.value -
@@ -1137,7 +1454,9 @@ async function orderBook(
    FUTURES DATA
 ========================================================= */
 
-async function futuresData(symbol) {
+async function futuresData(
+  symbol
+) {
 
   const output = {
 
@@ -1145,7 +1464,8 @@ async function futuresData(symbol) {
 
     openInterest: null,
 
-    openInterestValue: null,
+    openInterestValue:
+      null,
 
     fundingRate: null
   };
@@ -1156,9 +1476,14 @@ async function futuresData(symbol) {
       await bybit(
         "/v5/market/open-interest",
         {
-          category: "linear",
+          category:
+            "linear",
+
           symbol,
-          intervalTime: "5min",
+
+          intervalTime:
+            "5min",
+
           limit: 50
         }
       );
@@ -1166,7 +1491,9 @@ async function futuresData(symbol) {
     const list =
       oi.list || [];
 
-    if (list.length) {
+    if (
+      list.length
+    ) {
 
       const latest =
         list[0];
@@ -1190,8 +1517,11 @@ async function futuresData(symbol) {
       await bybit(
         "/v5/market/funding/history",
         {
-          category: "linear",
+          category:
+            "linear",
+
           symbol,
+
           limit: 1
         }
       );
@@ -1199,7 +1529,9 @@ async function futuresData(symbol) {
     const list =
       funding.list || [];
 
-    if (list.length) {
+    if (
+      list.length
+    ) {
 
       output.fundingRate =
         num(
@@ -1284,7 +1616,8 @@ function styleAnalysis(data) {
 
   styles.push({
 
-    name: "Scalping",
+    name:
+      "Scalping",
 
     score:
       Math.max(
@@ -1336,6 +1669,7 @@ function styleAnalysis(data) {
   }
 
   if (
+    rsiValue !== null &&
     rsiValue > 55
   ) {
 
@@ -1346,6 +1680,7 @@ function styleAnalysis(data) {
     );
 
   } else if (
+    rsiValue !== null &&
     rsiValue < 45
   ) {
 
@@ -1358,7 +1693,8 @@ function styleAnalysis(data) {
 
   styles.push({
 
-    name: "Day Trading",
+    name:
+      "Day Trading",
 
     score:
       Math.max(
@@ -1417,7 +1753,8 @@ function styleAnalysis(data) {
 
   styles.push({
 
-    name: "Swing Trading",
+    name:
+      "Swing Trading",
 
     score:
       Math.max(
@@ -1445,6 +1782,7 @@ function styleAnalysis(data) {
   const momentumReasons = [];
 
   if (
+    rsiValue !== null &&
     rsiValue >= 55
   ) {
 
@@ -1456,6 +1794,7 @@ function styleAnalysis(data) {
   }
 
   if (
+    rsiValue !== null &&
     rsiValue <= 45
   ) {
 
@@ -1490,7 +1829,8 @@ function styleAnalysis(data) {
 
   styles.push({
 
-    name: "Momentum",
+    name:
+      "Momentum",
 
     score:
       Math.max(
@@ -1580,7 +1920,8 @@ function styleAnalysis(data) {
 
   styles.push({
 
-    name: "Smart Money",
+    name:
+      "Smart Money",
 
     score:
       Math.max(
@@ -1606,15 +1947,173 @@ function styleAnalysis(data) {
 }
 
 /* =========================================================
+   TIMEFRAME SUMMARY
+========================================================= */
+
+function buildTimeframeSummary(
+  allTimeframes
+) {
+
+  return TIMEFRAMES.map(
+    tf => {
+
+      const item =
+        allTimeframes[
+          tf.key
+        ];
+
+      return {
+
+        key:
+          tf.key,
+
+        label:
+          tf.label,
+
+        interval:
+          tf.interval,
+
+        available:
+          Boolean(
+            item?.available
+          ),
+
+        trend:
+          item?.trend || null
+      };
+    }
+  );
+}
+
+/* =========================================================
+   MULTI TIMEFRAME ALIGNMENT
+========================================================= */
+
+function multiTimeframeAlignment(
+  allTimeframes
+) {
+
+  let bullish = 0;
+  let bearish = 0;
+  let neutral = 0;
+
+  const directions = {};
+
+  for (
+    const tf of TIMEFRAMES
+  ) {
+
+    const trend =
+      allTimeframes[
+        tf.key
+      ]?.trend;
+
+    const direction =
+      trend?.direction ||
+      "N/A";
+
+    directions[tf.key] =
+      direction;
+
+    if (
+      direction ===
+      "BULLISH"
+    ) {
+
+      bullish++;
+
+    } else if (
+      direction ===
+      "BEARISH"
+    ) {
+
+      bearish++;
+
+    } else {
+
+      neutral++;
+    }
+  }
+
+  const available =
+    bullish +
+    bearish +
+    neutral;
+
+  let direction =
+    "NEUTRAL";
+
+  if (
+    bullish > bearish &&
+    bullish >=
+      Math.ceil(
+        available * 0.55
+      )
+  ) {
+
+    direction =
+      "BULLISH";
+
+  } else if (
+    bearish > bullish &&
+    bearish >=
+      Math.ceil(
+        available * 0.55
+      )
+  ) {
+
+    direction =
+      "BEARISH";
+  }
+
+  const agreement =
+    available
+      ? Math.max(
+          bullish,
+          bearish
+        ) /
+        available *
+        100
+      : 0;
+
+  return {
+
+    direction,
+
+    bullish,
+
+    bearish,
+
+    neutral,
+
+    available,
+
+    agreement:
+      round(
+        agreement,
+        1
+      ),
+
+    directions
+  };
+}
+
+/* =========================================================
    DEEP ANALYSIS
 ========================================================= */
 
-async function analyzeSymbol(input) {
+async function analyzeSymbol(
+  input
+) {
 
   const found =
-    await findSymbol(input);
+    await findSymbol(
+      input
+    );
 
-  if (!found.found) {
+  if (
+    !found.found
+  ) {
 
     return {
 
@@ -1631,32 +2130,41 @@ async function analyzeSymbol(input) {
   const symbol =
     found.symbol;
 
+  /*
+   * تمام تایم‌فریم‌ها
+   * از 1m تا 1D
+   */
+
+  const allTimeframes =
+    await getAllTimeframes(
+      category,
+      symbol
+    );
+
+  const candles1m =
+    allTimeframes[
+      "1m"
+    ]?.candles || [];
+
+  const candles15m =
+    allTimeframes[
+      "15m"
+    ]?.candles || [];
+
+  const candles1h =
+    allTimeframes[
+      "1h"
+    ]?.candles || [];
+
+  /*
+   * داده‌های لحظه‌ای سنگین
+   */
+
   const [
-    candles1m,
-    candles15m,
-    candles1h,
     footprintData,
     orderBookData
   ] =
     await Promise.all([
-
-      getKlines(
-        category,
-        symbol,
-        "1"
-      ),
-
-      getKlines(
-        category,
-        symbol,
-        "15"
-      ),
-
-      getKlines(
-        category,
-        symbol,
-        "60"
-      ),
 
       footprint(
         category,
@@ -1670,12 +2178,11 @@ async function analyzeSymbol(input) {
     ]);
 
   if (
-    !candles1m.length ||
-    !candles15m.length
+    !candles1m.length
   ) {
 
     throw new Error(
-      "Insufficient market data"
+      "Insufficient 1m market data"
     );
   }
 
@@ -1685,19 +2192,24 @@ async function analyzeSymbol(input) {
     );
 
   const trend1m =
+    allTimeframes[
+      "1m"
+    ]?.trend ||
     trendAnalysis(
       candles1m
     );
 
   const trend15m =
-    trendAnalysis(
-      candles15m
-    );
+    allTimeframes[
+      "15m"
+    ]?.trend ||
+    null;
 
   const trend1h =
-    candles1h.length
-      ? trendAnalysis(candles1h)
-      : null;
+    allTimeframes[
+      "1h"
+    ]?.trend ||
+    null;
 
   const rsiValue =
     rsi(
@@ -1768,9 +2280,20 @@ async function analyzeSymbol(input) {
         trend1m.price
     });
 
+  const timeframeSummary =
+    buildTimeframeSummary(
+      allTimeframes
+    );
+
+  const alignment =
+    multiTimeframeAlignment(
+      allTimeframes
+    );
+
   const confirmations = [];
 
   if (
+    trend15m &&
     trend1m.direction ===
     trend15m.direction
   ) {
@@ -1786,7 +2309,19 @@ async function analyzeSymbol(input) {
     );
   }
 
-  if (trend1h) {
+  if (
+    alignment.direction !==
+    "NEUTRAL"
+  ) {
+
+    confirmations.push(
+      `${alignment.bullish} bullish / ${alignment.bearish} bearish timeframes. Overall multi-timeframe bias: ${alignment.direction}.`
+    );
+  }
+
+  if (
+    trend1h
+  ) {
 
     confirmations.push(
       `1h trend: ${trend1h.direction}`
@@ -1833,7 +2368,9 @@ async function analyzeSymbol(input) {
     );
   }
 
-  if (hunt.detected) {
+  if (
+    hunt.detected
+  ) {
 
     confirmations.push(
       hunt.type
@@ -1847,12 +2384,74 @@ async function analyzeSymbol(input) {
       )
     );
 
+  /*
+   * تایید 15 دقیقه
+   */
+
   if (
+    trend15m &&
     trend15m.direction ===
     trend1m.direction
   ) {
 
     overall += 5;
+  }
+
+  /*
+   * تایید چند تایم‌فریمی
+   */
+
+  if (
+    alignment.direction ===
+    trend1m.direction
+  ) {
+
+    overall += 5;
+  }
+
+  /*
+   * اگر تایم‌فریم‌های بلندتر
+   * کاملاً مخالف باشند،
+   * امتیاز کمی تعدیل می‌شود.
+   */
+
+  const longDirections = [
+    allTimeframes[
+      "4h"
+    ]?.trend?.direction,
+
+    allTimeframes[
+      "6h"
+    ]?.trend?.direction,
+
+    allTimeframes[
+      "12h"
+    ]?.trend?.direction,
+
+    allTimeframes[
+      "1D"
+    ]?.trend?.direction
+  ].filter(Boolean);
+
+  const oppositeLong =
+    longDirections.filter(
+      d =>
+        d !==
+        trend1m.direction &&
+        d !== "NEUTRAL"
+    ).length;
+
+  if (
+    oppositeLong >= 3
+  ) {
+
+    overall -= 7;
+
+  } else if (
+    oppositeLong >= 2
+  ) {
+
+    overall -= 3;
   }
 
   overall =
@@ -1913,12 +2512,61 @@ async function analyzeSymbol(input) {
       oneMinute:
         trend1m,
 
+      threeMinute:
+        allTimeframes[
+          "3m"
+        ]?.trend || null,
+
+      fiveMinute:
+        allTimeframes[
+          "5m"
+        ]?.trend || null,
+
       fifteenMinute:
         trend15m,
 
+      thirtyMinute:
+        allTimeframes[
+          "30m"
+        ]?.trend || null,
+
       oneHour:
-        trend1h
+        trend1h,
+
+      twoHour:
+        allTimeframes[
+          "2h"
+        ]?.trend || null,
+
+      fourHour:
+        allTimeframes[
+          "4h"
+        ]?.trend || null,
+
+      sixHour:
+        allTimeframes[
+          "6h"
+        ]?.trend || null,
+
+      twelveHour:
+        allTimeframes[
+          "12h"
+        ]?.trend || null,
+
+      oneDay:
+        allTimeframes[
+          "1D"
+        ]?.trend || null,
+
+      all:
+        allTimeframes
     },
+
+    timeframes:
+      timeframeSummary,
+
+    multiTimeframe:
+      alignment,
 
     indicators: {
 
@@ -1972,13 +2620,19 @@ async function analyzeSymbol(input) {
    CHART HTML
 ========================================================= */
 
-function chartHtml(data) {
+function chartHtml(
+  data
+) {
 
   const symbol =
-    htmlEscape(data.symbol);
+    htmlEscape(
+      data.symbol
+    );
 
   const category =
-    htmlEscape(data.market.category);
+    htmlEscape(
+      data.market.category
+    );
 
   return `
 
@@ -2014,36 +2668,48 @@ function chartHtml(data) {
 
     <div class="chart-tools">
 
-      <button
-        type="button"
-        class="tf active"
-        data-tf="1"
-      >
+      <button type="button" class="tf active" data-tf="1">
         1M
       </button>
 
-      <button
-        type="button"
-        class="tf"
-        data-tf="5"
-      >
+      <button type="button" class="tf" data-tf="3">
+        3M
+      </button>
+
+      <button type="button" class="tf" data-tf="5">
         5M
       </button>
 
-      <button
-        type="button"
-        class="tf"
-        data-tf="15"
-      >
+      <button type="button" class="tf" data-tf="15">
         15M
       </button>
 
-      <button
-        type="button"
-        class="tf"
-        data-tf="60"
-      >
+      <button type="button" class="tf" data-tf="30">
+        30M
+      </button>
+
+      <button type="button" class="tf" data-tf="60">
         1H
+      </button>
+
+      <button type="button" class="tf" data-tf="120">
+        2H
+      </button>
+
+      <button type="button" class="tf" data-tf="240">
+        4H
+      </button>
+
+      <button type="button" class="tf" data-tf="360">
+        6H
+      </button>
+
+      <button type="button" class="tf" data-tf="720">
+        12H
+      </button>
+
+      <button type="button" class="tf" data-tf="D">
+        1D
       </button>
 
       <button
@@ -2080,11 +2746,6 @@ function chartHtml(data) {
       <canvas
         id="live-chart"
       ></canvas>
-
-      <div
-        id="chart-cross"
-        class="chart-cross"
-      ></div>
 
       <div
         id="chart-loading"
@@ -2149,16 +2810,24 @@ function chartHtml(data) {
       ${JSON.stringify(data.market.category)};
 
     const canvas =
-      document.getElementById("live-chart");
+      document.getElementById(
+        "live-chart"
+      );
 
     const ctx =
-      canvas.getContext("2d");
+      canvas.getContext(
+        "2d"
+      );
 
     const wrap =
-      document.getElementById("chart-wrap");
+      document.getElementById(
+        "chart-wrap"
+      );
 
     const loading =
-      document.getElementById("chart-loading");
+      document.getElementById(
+        "chart-loading"
+      );
 
     const statusText =
       document.getElementById(
@@ -2176,19 +2845,29 @@ function chartHtml(data) {
       );
 
     const cOpen =
-      document.getElementById("c-open");
+      document.getElementById(
+        "c-open"
+      );
 
     const cHigh =
-      document.getElementById("c-high");
+      document.getElementById(
+        "c-high"
+      );
 
     const cLow =
-      document.getElementById("c-low");
+      document.getElementById(
+        "c-low"
+      );
 
     const cClose =
-      document.getElementById("c-close");
+      document.getElementById(
+        "c-close"
+      );
 
     const cVolume =
-      document.getElementById("c-volume");
+      document.getElementById(
+        "c-volume"
+      );
 
     const closeBtn =
       document.getElementById(
@@ -2206,17 +2885,25 @@ function chartHtml(data) {
 
     function resizeCanvas() {
 
+      if (
+        destroyed
+      ) {
+        return;
+      }
+
       const rect =
         wrap.getBoundingClientRect();
 
       const dpr =
-        window.devicePixelRatio || 1;
+        window.devicePixelRatio ||
+        1;
 
       canvas.width =
         Math.max(
           300,
           Math.floor(
-            rect.width * dpr
+            rect.width *
+            dpr
           )
         );
 
@@ -2224,15 +2911,18 @@ function chartHtml(data) {
         Math.max(
           260,
           Math.floor(
-            rect.height * dpr
+            rect.height *
+            dpr
           )
         );
 
       canvas.style.width =
-        rect.width + "px";
+        rect.width +
+        "px";
 
       canvas.style.height =
-        rect.height + "px";
+        rect.height +
+        "px";
 
       ctx.setTransform(
         dpr,
@@ -2251,24 +2941,34 @@ function chartHtml(data) {
       const n =
         Number(v);
 
-      if (!Number.isFinite(n)) {
+      if (
+        !Number.isFinite(n)
+      ) {
         return "—";
       }
 
-      if (n >= 1000) {
+      if (
+        n >= 1000
+      ) {
+
         return n.toLocaleString(
           "en-US",
           {
-            maximumFractionDigits: 2
+            maximumFractionDigits:
+              2
           }
         );
       }
 
-      if (n >= 1) {
+      if (
+        n >= 1
+      ) {
+
         return n.toLocaleString(
           "en-US",
           {
-            maximumFractionDigits: 4
+            maximumFractionDigits:
+              4
           }
         );
       }
@@ -2276,7 +2976,8 @@ function chartHtml(data) {
       return n.toLocaleString(
         "en-US",
         {
-          maximumFractionDigits: 8
+          maximumFractionDigits:
+            8
         }
       );
     }
@@ -2286,38 +2987,57 @@ function chartHtml(data) {
       const n =
         Number(v);
 
-      if (!Number.isFinite(n)) {
+      if (
+        !Number.isFinite(n)
+      ) {
         return "—";
       }
 
-      if (n >= 1000000000) {
+      if (
+        n >= 1000000000
+      ) {
+
         return (
-          (n / 1000000000)
-            .toFixed(2)
-          + "B"
+          (
+            n /
+            1000000000
+          ).toFixed(2) +
+          "B"
         );
       }
 
-      if (n >= 1000000) {
+      if (
+        n >= 1000000
+      ) {
+
         return (
-          (n / 1000000)
-            .toFixed(2)
-          + "M"
+          (
+            n /
+            1000000
+          ).toFixed(2) +
+          "M"
         );
       }
 
-      if (n >= 1000) {
+      if (
+        n >= 1000
+      ) {
+
         return (
-          (n / 1000)
-            .toFixed(2)
-          + "K"
+          (
+            n /
+            1000
+          ).toFixed(2) +
+          "K"
         );
       }
 
       return n.toFixed(2);
     }
 
-    function setStatus(text) {
+    function setStatus(
+      text
+    ) {
 
       statusText.textContent =
         text;
@@ -2325,7 +3045,9 @@ function chartHtml(data) {
 
     function updateInfo() {
 
-      if (!candles.length) {
+      if (
+        !candles.length
+      ) {
         return;
       }
 
@@ -2345,14 +3067,18 @@ function chartHtml(data) {
       const change =
         first.close
           ? (
-              (last.close -
-                first.close) /
+              (
+                last.close -
+                first.close
+              ) /
               first.close
             ) * 100
           : 0;
 
       livePrice.textContent =
-        priceText(last.close);
+        priceText(
+          last.close
+        );
 
       liveChange.textContent =
         (
@@ -2364,19 +3090,29 @@ function chartHtml(data) {
         "%";
 
       cOpen.textContent =
-        priceText(last.open);
+        priceText(
+          last.open
+        );
 
       cHigh.textContent =
-        priceText(last.high);
+        priceText(
+          last.high
+        );
 
       cLow.textContent =
-        priceText(last.low);
+        priceText(
+          last.low
+        );
 
       cClose.textContent =
-        priceText(last.close);
+        priceText(
+          last.close
+        );
 
       cVolume.textContent =
-        volumeText(last.volume);
+        volumeText(
+          last.volume
+        );
     }
 
     function draw() {
@@ -2405,9 +3141,13 @@ function chartHtml(data) {
       );
 
       const data =
-        candles.slice(-90);
+        candles.slice(
+          -90
+        );
 
-      if (!data.length) {
+      if (
+        !data.length
+      ) {
         return;
       }
 
@@ -2425,7 +3165,10 @@ function chartHtml(data) {
           )
         );
 
-      if (max === min) {
+      if (
+        max === min
+      ) {
+
         max += 1;
         min -= 1;
       }
@@ -2471,8 +3214,6 @@ function chartHtml(data) {
           chartWidth
         );
       }
-
-      /* Grid */
 
       ctx.font =
         "11px Arial";
@@ -2532,8 +3273,6 @@ function chartHtml(data) {
         );
       }
 
-      /* Candles */
-
       const candleWidth =
         Math.max(
           2,
@@ -2570,7 +3309,8 @@ function chartHtml(data) {
           y(c.low);
 
         const up =
-          c.close >= c.open;
+          c.close >=
+          c.open;
 
         ctx.beginPath();
 
@@ -2623,10 +3363,10 @@ function chartHtml(data) {
         );
       }
 
-      /* Last price */
-
       const last =
-        data[data.length - 1];
+        data[
+          data.length - 1
+        ];
 
       const lastY =
         y(last.close);
@@ -2675,12 +3415,12 @@ function chartHtml(data) {
         "center";
 
       ctx.fillText(
-        priceText(last.close),
+        priceText(
+          last.close
+        ),
         width - 31,
         lastY
       );
-
-      /* Time labels */
 
       ctx.fillStyle =
         "rgba(255,255,255,.55)";
@@ -2710,14 +3450,25 @@ function chartHtml(data) {
             data[i].time
           );
 
+        const isDaily =
+          interval === "D";
+
         const label =
-          d.toLocaleTimeString(
-            [],
-            {
-              hour: "2-digit",
-              minute: "2-digit"
-            }
-          );
+          isDaily
+            ? d.toLocaleDateString(
+                [],
+                {
+                  month: "2-digit",
+                  day: "2-digit"
+                }
+              )
+            : d.toLocaleTimeString(
+                [],
+                {
+                  hour: "2-digit",
+                  minute: "2-digit"
+                }
+              );
 
         ctx.fillText(
           label,
@@ -2729,7 +3480,9 @@ function chartHtml(data) {
 
     async function loadChart() {
 
-      if (destroyed) {
+      if (
+        destroyed
+      ) {
         return;
       }
 
@@ -2806,7 +3559,6 @@ function chartHtml(data) {
         setStatus(
           "Connection error"
         );
-
       }
     }
 
@@ -2905,31 +3657,42 @@ function chartHtml(data) {
    ANALYSIS HTML
 ========================================================= */
 
-function analysisHtml(data) {
+function analysisHtml(
+  data
+) {
 
-  if (!data.ok) {
+  if (
+    !data.ok
+  ) {
 
     return `
       <div class="error">
-        ❌ ${htmlEscape(data.error)}
+        ❌ ${htmlEscape(
+          data.error
+        )}
       </div>
     `;
   }
 
   const styles =
     data.styles
-      .map(s => `
+      .map(
+        s => `
 
         <div class="style">
 
           <div class="style-top">
 
             <b>
-              ${htmlEscape(s.name)}
+              ${htmlEscape(
+                s.name
+              )}
             </b>
 
             <span>
-              ${htmlEscape(s.view)}
+              ${htmlEscape(
+                s.view
+              )}
             </span>
 
           </div>
@@ -2949,10 +3712,11 @@ function analysisHtml(data) {
           <ul>
 
             ${s.reasons
-              .map(r =>
-                `<li>
-                  ${htmlEscape(r)}
-                </li>`
+              .map(
+                r =>
+                  `<li>
+                    ${htmlEscape(r)}
+                  </li>`
               )
               .join("")}
 
@@ -2960,11 +3724,13 @@ function analysisHtml(data) {
 
         </div>
 
-      `)
+      `
+      )
       .join("");
 
   const supports =
-    data.supportResistance.supports
+    data.supportResistance
+      .supports
       .map(
         x =>
           formatPrice(
@@ -2975,7 +3741,8 @@ function analysisHtml(data) {
     "No confirmed level";
 
   const resistances =
-    data.supportResistance.resistances
+    data.supportResistance
+      .resistances
       .map(
         x =>
           formatPrice(
@@ -2994,6 +3761,107 @@ function analysisHtml(data) {
   const hunt =
     data.liquidity.hunt;
 
+  const timeframeHtml =
+    data.timeframes
+      .map(
+        tf => {
+
+          const t =
+            tf.trend;
+
+          if (
+            !t
+          ) {
+
+            return `
+              <div class="tf-card unavailable">
+
+                <small>
+                  ${htmlEscape(
+                    tf.key
+                  )}
+                </small>
+
+                <b>
+                  N/A
+                </b>
+
+                <span>
+                  Data unavailable
+                </span>
+
+              </div>
+            `;
+          }
+
+          const cls =
+            t.direction
+              .toLowerCase();
+
+          return `
+            <div class="tf-card ${cls}">
+
+              <div class="tf-card-top">
+
+                <b>
+                  ${htmlEscape(
+                    tf.key
+                  )}
+                </b>
+
+                <span>
+                  ${htmlEscape(
+                    t.direction
+                  )}
+                </span>
+
+              </div>
+
+              <strong>
+                ${round(
+                  t.score,
+                  1
+                )}/100
+              </strong>
+
+              <small>
+                Price:
+                ${formatPrice(
+                  t.price
+                )}
+              </small>
+
+              <small>
+                MA20:
+                ${
+                  t.ma20 !== null
+                    ? formatPrice(
+                        t.ma20
+                      )
+                    : "N/A"
+                }
+              </small>
+
+              <small>
+                MA50:
+                ${
+                  t.ma50 !== null
+                    ? formatPrice(
+                        t.ma50
+                      )
+                    : "N/A"
+                }
+              </small>
+
+            </div>
+          `;
+        }
+      )
+      .join("");
+
+  const alignment =
+    data.multiTimeframe;
+
   return `
 
 <!DOCTYPE html>
@@ -3010,7 +3878,8 @@ function analysisHtml(data) {
 />
 
 <title>
-Global Pulse - ${htmlEscape(data.symbol)}
+Global Pulse -
+${htmlEscape(data.symbol)}
 </title>
 
 <style>
@@ -3048,7 +3917,7 @@ body{
 
 .result{
 
-  max-width:1000px;
+  max-width:1100px;
 
   margin:auto;
 
@@ -3114,7 +3983,8 @@ body{
 
   color:#22c55e;
 
-  border:1px solid
+  border:
+    1px solid
     rgba(34,197,94,.4);
 
 }
@@ -3123,7 +3993,8 @@ body{
 
   color:#ef4444;
 
-  border:1px solid
+  border:
+    1px solid
     rgba(239,68,68,.4);
 
 }
@@ -3132,7 +4003,8 @@ body{
 
   color:#f59e0b;
 
-  border:1px solid
+  border:
+    1px solid
     rgba(245,158,11,.4);
 
 }
@@ -3383,6 +4255,190 @@ h3{
 }
 
 /* =======================================================
+   ALL TIMEFRAMES
+======================================================= */
+
+.timeframe-grid{
+
+  display:grid;
+
+  grid-template-columns:
+    repeat(
+      auto-fit,
+      minmax(
+        145px,
+        1fr
+      )
+    );
+
+  gap:10px;
+
+}
+
+.tf-card{
+
+  background:
+    rgba(15,23,42,.9);
+
+  border:
+    1px solid
+    rgba(255,255,255,.08);
+
+  border-radius:14px;
+
+  padding:13px;
+
+  min-height:145px;
+
+}
+
+.tf-card-top{
+
+  display:flex;
+
+  justify-content:space-between;
+
+  align-items:center;
+
+  gap:5px;
+
+  margin-bottom:12px;
+
+}
+
+.tf-card-top b{
+
+  font-size:16px;
+
+}
+
+.tf-card-top span{
+
+  font-size:11px;
+
+  font-weight:800;
+
+}
+
+.tf-card.bullish{
+
+  border-color:
+    rgba(34,197,94,.35);
+
+}
+
+.tf-card.bullish
+.tf-card-top span{
+
+  color:#22c55e;
+
+}
+
+.tf-card.bearish{
+
+  border-color:
+    rgba(239,68,68,.35);
+
+}
+
+.tf-card.bearish
+.tf-card-top span{
+
+  color:#ef4444;
+
+}
+
+.tf-card.neutral{
+
+  border-color:
+    rgba(245,158,11,.35);
+
+}
+
+.tf-card.neutral
+.tf-card-top span{
+
+  color:#f59e0b;
+
+}
+
+.tf-card.unavailable{
+
+  opacity:.55;
+
+}
+
+.tf-card strong{
+
+  display:block;
+
+  font-size:18px;
+
+  margin-bottom:10px;
+
+}
+
+.tf-card small{
+
+  display:block;
+
+  color:#94a3b8;
+
+  margin-top:5px;
+
+  font-size:11px;
+
+}
+
+.mtf-summary{
+
+  display:grid;
+
+  grid-template-columns:
+    repeat(
+      auto-fit,
+      minmax(
+        140px,
+        1fr
+      )
+    );
+
+  gap:10px;
+
+  margin-top:12px;
+
+}
+
+.mtf-box{
+
+  background:
+    rgba(15,23,42,.85);
+
+  border-radius:12px;
+
+  padding:13px;
+
+  text-align:center;
+
+}
+
+.mtf-box small{
+
+  display:block;
+
+  color:#94a3b8;
+
+  margin-bottom:6px;
+
+}
+
+.mtf-box b{
+
+  font-size:18px;
+
+}
+
+/* =======================================================
    LIVE CHART
 ======================================================= */
 
@@ -3472,7 +4528,8 @@ h3{
 .tf,
 .chart-close{
 
-  border:1px solid
+  border:
+    1px solid
     rgba(255,255,255,.1);
 
   background:#111827;
@@ -3481,7 +4538,7 @@ h3{
 
   border-radius:10px;
 
-  padding:8px 13px;
+  padding:8px 12px;
 
   cursor:pointer;
 
@@ -3557,8 +4614,7 @@ h3{
 
   border-radius:14px;
 
-  background:
-    #070b12;
+  background:#070b12;
 
 }
 
@@ -3659,33 +4715,28 @@ h3{
 @media(max-width:600px){
 
   body{
-
     padding:10px;
-
   }
 
   .coin-head{
-
     align-items:flex-start;
-
   }
 
   .coin-head h2{
-
     font-size:22px;
-
   }
 
   .verdict{
-
     min-width:100px;
-
   }
 
   .chart-wrap{
-
     height:300px;
+  }
 
+  .tf{
+    flex:1;
+    min-width:55px;
   }
 
 }
@@ -3707,12 +4758,16 @@ h3{
       </small>
 
       <h2>
-        🪙 ${htmlEscape(data.symbol)}
+        🪙 ${htmlEscape(
+          data.symbol
+        )}
       </h2>
 
       <small>
         🏦 Market:
-        ${htmlEscape(data.market.type)}
+        ${htmlEscape(
+          data.market.type
+        )}
       </small>
 
     </div>
@@ -3740,7 +4795,9 @@ h3{
       </small>
 
       <b>
-        ${formatPrice(data.price)}
+        ${formatPrice(
+          data.price
+        )}
       </b>
 
     </div>
@@ -3764,7 +4821,14 @@ h3{
       </small>
 
       <b>
-        ${data.trend.fifteenMinute.direction}
+        ${
+          data.trend
+            .fifteenMinute
+            ? data.trend
+                .fifteenMinute
+                .direction
+            : "N/A"
+        }
       </b>
 
     </div>
@@ -3788,14 +4852,34 @@ h3{
     <div class="card">
 
       <small>
+        1D TREND
+      </small>
+
+      <b>
+        ${
+          data.trend.oneDay
+            ? data.trend.oneDay.direction
+            : "N/A"
+        }
+      </b>
+
+    </div>
+
+    <div class="card">
+
+      <small>
         RSI
       </small>
 
       <b>
-        ${round(
-          data.indicators.rsi,
-          2
-        )}
+        ${
+          data.indicators.rsi !== null
+            ? round(
+                data.indicators.rsi,
+                2
+              )
+            : "N/A"
+        }
       </b>
 
     </div>
@@ -3823,12 +4907,90 @@ h3{
         font-size:14px;
       "
     >
-      📈 چارت زنده
+      📈 چارت زنده — همه تایم‌فریم‌ها
     </button>
 
   </div>
 
   <div id="live-chart-container"></div>
+
+  <h3>
+    🕐 All Timeframes — 1M تا 1D
+  </h3>
+
+  <div class="timeframe-grid">
+
+    ${timeframeHtml}
+
+  </div>
+
+  <h3>
+    🌐 Multi-Timeframe Alignment
+  </h3>
+
+  <div class="mtf-summary">
+
+    <div class="mtf-box">
+
+      <small>
+        Overall Bias
+      </small>
+
+      <b>
+        ${alignment.direction}
+      </b>
+
+    </div>
+
+    <div class="mtf-box">
+
+      <small>
+        Bullish
+      </small>
+
+      <b>
+        ${alignment.bullish}
+      </b>
+
+    </div>
+
+    <div class="mtf-box">
+
+      <small>
+        Bearish
+      </small>
+
+      <b>
+        ${alignment.bearish}
+      </b>
+
+    </div>
+
+    <div class="mtf-box">
+
+      <small>
+        Neutral
+      </small>
+
+      <b>
+        ${alignment.neutral}
+      </b>
+
+    </div>
+
+    <div class="mtf-box">
+
+      <small>
+        Agreement
+      </small>
+
+      <b>
+        ${alignment.agreement}%
+      </b>
+
+    </div>
+
+  </div>
 
   <h3>
     📊 Trading Styles
@@ -3849,7 +5011,9 @@ h3{
       </b>
 
       <p>
-        ${htmlEscape(supports)}
+        ${htmlEscape(
+          supports
+        )}
       </p>
 
     </div>
@@ -3861,7 +5025,9 @@ h3{
       </b>
 
       <p>
-        ${htmlEscape(resistances)}
+        ${htmlEscape(
+          resistances
+        )}
       </p>
 
     </div>
@@ -3875,11 +5041,15 @@ h3{
   <div class="data-box">
 
     <b>
-      ${htmlEscape(hunt.type)}
+      ${htmlEscape(
+        hunt.type
+      )}
     </b>
 
     <p>
-      ${htmlEscape(hunt.reason)}
+      ${htmlEscape(
+        hunt.reason
+      )}
     </p>
 
     ${
@@ -3887,7 +5057,9 @@ h3{
         ? `
           <small>
             Level:
-            ${formatPrice(hunt.level)}
+            ${formatPrice(
+              hunt.level
+            )}
           </small>
         `
         : ""
@@ -3904,28 +5076,40 @@ h3{
     <div>
       Buy Volume
       <b>
-        ${round(f.buyVolume,4)}
+        ${round(
+          f.buyVolume,
+          4
+        )}
       </b>
     </div>
 
     <div>
       Sell Volume
       <b>
-        ${round(f.sellVolume,4)}
+        ${round(
+          f.sellVolume,
+          4
+        )}
       </b>
     </div>
 
     <div>
       Delta
       <b>
-        ${round(f.delta,4)}
+        ${round(
+          f.delta,
+          4
+        )}
       </b>
     </div>
 
     <div>
       Delta %
       <b>
-        ${round(f.deltaPercent,2)}%
+        ${round(
+          f.deltaPercent,
+          2
+        )}%
       </b>
     </div>
 
@@ -3965,28 +5149,38 @@ h3{
     <div>
       Buy Share
       <b>
-        ${round(ob.buyShare,2)}%
+        ${round(
+          ob.buyShare,
+          2
+        )}%
       </b>
     </div>
 
     <div>
       Sell Share
       <b>
-        ${round(ob.sellShare,2)}%
+        ${round(
+          ob.sellShare,
+          2
+        )}%
       </b>
     </div>
 
     <div>
       Best Bid
       <b>
-        ${formatPrice(ob.bestBid)}
+        ${formatPrice(
+          ob.bestBid
+        )}
       </b>
     </div>
 
     <div>
       Best Ask
       <b>
-        ${formatPrice(ob.bestAsk)}
+        ${formatPrice(
+          ob.bestAsk
+        )}
       </b>
     </div>
 
@@ -4013,7 +5207,8 @@ h3{
             Open Interest
             <b>
               ${
-                data.futures.openInterest
+                data.futures
+                  .openInterest
                   ?? "N/A"
               }
             </b>
@@ -4023,13 +5218,14 @@ h3{
             OI Value
             <b>
               ${
-                data.futures.openInterestValue
-                  ? "$" +
-                    Math.round(
-                      data.futures
-                        .openInterestValue
-                    ).toLocaleString()
-                  : "N/A"
+                data.futures
+                  .openInterestValue
+                    ? "$" +
+                      Math.round(
+                        data.futures
+                          .openInterestValue
+                      ).toLocaleString()
+                    : "N/A"
               }
             </b>
           </div>
@@ -4038,8 +5234,10 @@ h3{
             Funding
             <b>
               ${
-                data.futures.fundingRate !== null
-                  ? data.futures.fundingRate
+                data.futures
+                  .fundingRate !== null
+                  ? data.futures
+                      .fundingRate
                   : "N/A"
               }
             </b>
@@ -4110,7 +5308,9 @@ document
       }
 
       container.innerHTML =
-        ${JSON.stringify(chartHtml(data))};
+        ${JSON.stringify(
+          chartHtml(data)
+        )};
 
       container.scrollIntoView({
         behavior:"smooth",
@@ -4201,6 +5401,18 @@ export default {
           liveChart:
             true,
 
+          allTimeframes:
+            TIMEFRAMES.map(
+              x => ({
+                key:
+                  x.key,
+                interval:
+                  x.interval,
+                label:
+                  x.label
+              })
+            ),
+
           time:
             new Date().toISOString()
         });
@@ -4279,7 +5491,7 @@ export default {
             )
           );
 
-        const interval =
+        const requestedInterval =
           url.searchParams.get(
             "interval"
           ) || "1";
@@ -4323,7 +5535,9 @@ export default {
             input
           );
 
-        if (!found.found) {
+        if (
+          !found.found
+        ) {
 
           return json({
 
@@ -4339,46 +5553,43 @@ export default {
           found.category;
 
         /*
-         * اگر Frontend دسته‌بندی فرستاد،
-         * فقط در صورتی استفاده می‌کنیم
-         * که با بازار واقعی Symbol هماهنگ باشد.
+         * فقط زمانی دسته‌بندی
+         * Frontend را قبول می‌کنیم
+         * که با بازار واقعی Symbol
+         * یکی باشد.
          */
 
         if (
-          requestedCategory === "spot" &&
-          found.category === "spot"
+          requestedCategory ===
+            "spot" &&
+          found.category ===
+            "spot"
         ) {
 
-          category = "spot";
+          category =
+            "spot";
         }
 
         if (
-          requestedCategory === "linear" &&
-          found.category === "linear"
+          requestedCategory ===
+            "linear" &&
+          found.category ===
+            "linear"
         ) {
 
-          category = "linear";
+          category =
+            "linear";
         }
 
-        const allowedIntervals = [
-          "1",
-          "3",
-          "5",
-          "15",
-          "30",
-          "60",
-          "120",
-          "240",
-          "360",
-          "720",
-          "D"
-        ];
-
         const safeInterval =
-          allowedIntervals.includes(
-            String(interval)
+          ALLOWED_INTERVALS.includes(
+            String(
+              requestedInterval
+            )
           )
-            ? String(interval)
+            ? String(
+                requestedInterval
+              )
             : "1";
 
         const candles =
@@ -4387,6 +5598,13 @@ export default {
             found.symbol,
             safeInterval,
             limit
+          );
+
+        const timeframe =
+          TIMEFRAMES.find(
+            x =>
+              x.interval ===
+              safeInterval
           );
 
         return json({
@@ -4404,6 +5622,16 @@ export default {
           interval:
             safeInterval,
 
+          timeframe:
+            timeframe
+              ? {
+                  key:
+                    timeframe.key,
+                  label:
+                    timeframe.label
+                }
+              : null,
+
           candles,
 
           serverTime:
@@ -4420,7 +5648,8 @@ export default {
 
       if (
         request.method === "GET" &&
-        url.pathname === "/crypto"
+        url.pathname ===
+          "/crypto"
       ) {
 
         const input =
@@ -4473,6 +5702,7 @@ export default {
             headers: {
               "content-type":
                 "text/html; charset=utf-8",
+
               "cache-control":
                 "no-store"
             }
