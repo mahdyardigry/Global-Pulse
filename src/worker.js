@@ -1,5 +1,5 @@
 const BYBIT = "https://api.bybit.com";
-const VERSION = "GLOBAL-PULSE-CRYPTO-DEEP-V2";
+const VERSION = "GLOBAL-PULSE-CRYPTO-DEEP-V1";
 
 const KLINE_LIMIT = 200;
 const TRADE_LIMIT = 1000;
@@ -79,7 +79,7 @@ function pct(a, b) {
 
 function round(v, d = 2) {
   const p = Math.pow(10, d);
-  return Math.round(num(v) * p) / p;
+  return Math.round(v * p) / p;
 }
 
 function formatPrice(v) {
@@ -123,27 +123,24 @@ async function bybit(path, params = {}) {
     }
   }
 
-  const query =
-    qs.toString();
+  const query = qs.toString();
 
   const url =
-    `${BYBIT}${path}${query ? `?${query}` : ""}`;
+    query
+      ? `${BYBIT}${path}?${query}`
+      : `${BYBIT}${path}`;
 
-  const r =
-    await fetch(url, {
-      headers: {
-        "accept": "application/json"
-      }
-    });
+  const r = await fetch(url, {
+    headers: {
+      "accept": "application/json"
+    }
+  });
 
   if (!r.ok) {
-    throw new Error(
-      `Bybit HTTP ${r.status}`
-    );
+    throw new Error(`Bybit HTTP ${r.status}`);
   }
 
-  const data =
-    await r.json();
+  const data = await r.json();
 
   if (data.retCode !== 0) {
     throw new Error(
@@ -151,38 +148,54 @@ async function bybit(path, params = {}) {
     );
   }
 
-  return data.result || {};
+  return data.result;
 }
 
 /* =========================================================
    FIND SYMBOL
-   Futures first.
-   No user category selection.
+   ROBUST VERSION
+   Futures first → Spot
+   Supports:
+   BTC
+   BTCUSDT
+   ETH
+   ETHUSDT
+   PEPE
+   PEPEUSDT
 ========================================================= */
 
 async function findSymbol(input) {
 
-  let symbol =
+  const raw =
     upper(input)
       .replace(/\s+/g, "")
       .replace(/[-_/]/g, "");
 
+  if (!raw) {
+    return {
+      found: false,
+      symbol: ""
+    };
+  }
+
+  let symbol = raw;
+
   if (!symbol.endsWith("USDT")) {
-    symbol += "USDT";
+    symbol = `${symbol}USDT`;
   }
 
   /* =======================================================
-     LINEAR FUTURES
+     SEARCH CATEGORY
   ======================================================= */
 
-  try {
+  async function searchCategory(category) {
 
     let cursor = "";
 
     for (let page = 0; page < 10; page++) {
 
       const params = {
-        category: "linear",
+        category,
         limit: 1000
       };
 
@@ -190,128 +203,151 @@ async function findSymbol(input) {
         params.cursor = cursor;
       }
 
-      const result =
-        await bybit(
-          "/v5/market/instruments-info",
-          params
-        );
+      let result;
+
+      try {
+
+        result =
+          await bybit(
+            "/v5/market/instruments-info",
+            params
+          );
+
+      } catch (_) {
+
+        return null;
+      }
 
       const list =
-        result.list || [];
+        Array.isArray(result?.list)
+          ? result.list
+          : [];
 
-      const item =
+      /* ---------------------------------------------------
+         EXACT SYMBOL
+         BTCUSDT
+         ETHUSDT
+         PEPEUSDT
+      --------------------------------------------------- */
+
+      let item =
         list.find(x =>
-          upper(x.symbol) === symbol &&
-          (
-            !x.status ||
-            String(x.status).toUpperCase() === "TRADING"
-          )
+          upper(x.symbol) === symbol
         );
 
       if (item) {
-
-        return {
-          found: true,
-          category: "linear",
-          market: "Futures",
-          symbol: item.symbol,
-          baseCoin: item.baseCoin || "",
-          quoteCoin: item.quoteCoin || "",
-          contractType: item.contractType || "",
-          raw: item
-        };
+        return item;
       }
 
-      cursor =
-        result.nextPageCursor || "";
+      /* ---------------------------------------------------
+         BASE COIN
+         BTC → BTCUSDT
+         ETH → ETHUSDT
+         PEPE → PEPEUSDT
+      --------------------------------------------------- */
 
-      if (!cursor) break;
+      if (!raw.endsWith("USDT")) {
+
+        item =
+          list.find(x =>
+            upper(x.baseCoin) === raw &&
+            upper(x.quoteCoin) === "USDT"
+          );
+
+        if (item) {
+          return item;
+        }
+      }
+
+      /* ---------------------------------------------------
+         NEXT PAGE
+      --------------------------------------------------- */
+
+      cursor =
+        result?.nextPageCursor || "";
+
+      if (!cursor) {
+        break;
+      }
     }
 
-  } catch (error) {
-
-    console.error(
-      "Linear symbol lookup:",
-      error.message
-    );
+    return null;
   }
 
   /* =======================================================
-     SPOT
+     1. FUTURES
   ======================================================= */
 
-  try {
+  const futuresItem =
+    await searchCategory("linear");
 
-    const result =
-      await bybit(
-        "/v5/market/instruments-info",
-        {
-          category: "spot",
-          limit: 1000
-        }
-      );
+  if (futuresItem) {
 
-    const list =
-      result.list || [];
+    return {
+      found: true,
 
-    const item =
-      list.find(x =>
-        upper(x.symbol) === symbol &&
-        (
-          !x.status ||
-          String(x.status).toUpperCase() === "TRADING"
-        )
-      );
+      category: "linear",
 
-    if (item) {
+      market: "Futures",
 
-      return {
-        found: true,
-        category: "spot",
-        market: "Spot",
-        symbol: item.symbol,
-        baseCoin: item.baseCoin || "",
-        quoteCoin: item.quoteCoin || "",
-        contractType: "",
-        raw: item
-      };
-    }
+      symbol:
+        futuresItem.symbol,
 
-  } catch (error) {
+      baseCoin:
+        futuresItem.baseCoin || "",
 
-    console.error(
-      "Spot symbol lookup:",
-      error.message
-    );
+      quoteCoin:
+        futuresItem.quoteCoin || "",
+
+      contractType:
+        futuresItem.contractType || "",
+
+      raw:
+        futuresItem
+    };
   }
+
+  /* =======================================================
+     2. SPOT
+  ======================================================= */
+
+  const spotItem =
+    await searchCategory("spot");
+
+  if (spotItem) {
+
+    return {
+      found: true,
+
+      category: "spot",
+
+      market: "Spot",
+
+      symbol:
+        spotItem.symbol,
+
+      baseCoin:
+        spotItem.baseCoin || "",
+
+      quoteCoin:
+        spotItem.quoteCoin || "",
+
+      contractType: "",
+
+      raw:
+        spotItem
+    };
+  }
+
+  /* =======================================================
+     NOT FOUND
+  ======================================================= */
 
   return {
     found: false,
     symbol
   };
 }
-
-/* =========================================================
-   BYBIT TIMEFRAMES
-   No 3D.
-   Only returned/available data will be used.
-========================================================= */
-
-const TIMEFRAMES = [
-  { interval: "1",   label: "1M" },
-  { interval: "3",   label: "3M" },
-  { interval: "5",   label: "5M" },
-  { interval: "15",  label: "15M" },
-  { interval: "30",  label: "30M" },
-  { interval: "60",  label: "1H" },
-  { interval: "120", label: "2H" },
-  { interval: "240", label: "4H" },
-  { interval: "360", label: "6H" },
-  { interval: "720", label: "12H" },
-  { interval: "D",   label: "1D" },
-  { interval: "W",   label: "1W" },
-  { interval: "M",   label: "1MO" }
-];
 
 /* =========================================================
    KLINES
@@ -349,69 +385,7 @@ async function getKlines(
       }
     );
 
-  return parseKlines(
-    result.list
-  );
-}
-
-/* =========================================================
-   ALL AVAILABLE TIMEFRAMES
-========================================================= */
-
-async function getAllTimeframes(
-  category,
-  symbol
-) {
-
-  const results = {};
-
-  const jobs =
-    TIMEFRAMES.map(async tf => {
-
-      try {
-
-        const candles =
-          await getKlines(
-            category,
-            symbol,
-            tf.interval
-          );
-
-        if (
-          candles &&
-          candles.length >= 20
-        ) {
-
-          results[tf.interval] = {
-
-            interval:
-              tf.interval,
-
-            label:
-              tf.label,
-
-            candles,
-
-            trend:
-              trendAnalysis(candles),
-
-            available:
-              true
-          };
-        }
-
-      } catch (error) {
-
-        console.log(
-          `Timeframe ${tf.label} unavailable:`,
-          error.message
-        );
-      }
-    });
-
-  await Promise.all(jobs);
-
-  return results;
+  return parseKlines(result.list);
 }
 
 /* =========================================================
@@ -420,10 +394,7 @@ async function getAllTimeframes(
 
 function sma(values, period) {
 
-  if (
-    !values ||
-    values.length < period
-  ) {
+  if (values.length < period) {
     return null;
   }
 
@@ -436,10 +407,7 @@ function sma(values, period) {
 
 function ema(values, period) {
 
-  if (
-    !values ||
-    values.length < period
-  ) {
+  if (values.length < period) {
     return null;
   }
 
@@ -447,9 +415,7 @@ function ema(values, period) {
     2 / (period + 1);
 
   let e =
-    avg(
-      values.slice(0, period)
-    );
+    avg(values.slice(0, period));
 
   for (
     let i = period;
@@ -465,15 +431,9 @@ function ema(values, period) {
   return e;
 }
 
-function rsi(
-  values,
-  period = 14
-) {
+function rsi(values, period = 14) {
 
-  if (
-    !values ||
-    values.length < period + 1
-  ) {
+  if (values.length < period + 1) {
     return null;
   }
 
@@ -543,15 +503,9 @@ function rsi(
     100 / (1 + rs);
 }
 
-function atr(
-  candles,
-  period = 14
-) {
+function atr(candles, period = 14) {
 
-  if (
-    !candles ||
-    candles.length < period + 1
-  ) {
+  if (candles.length < period + 1) {
     return null;
   }
 
@@ -589,10 +543,7 @@ function atr(
 
 function macd(values) {
 
-  if (
-    !values ||
-    values.length < 35
-  ) {
+  if (values.length < 35) {
     return null;
   }
 
@@ -612,15 +563,9 @@ function macd(values) {
   return fast - slow;
 }
 
-function bollinger(
-  values,
-  period = 20
-) {
+function bollinger(values, period = 20) {
 
-  if (
-    !values ||
-    values.length < period
-  ) {
+  if (values.length < period) {
     return null;
   }
 
@@ -644,9 +589,7 @@ function bollinger(
     Math.sqrt(variance);
 
   return {
-
-    middle:
-      mean,
+    middle: mean,
 
     upper:
       mean + sd * 2,
@@ -656,10 +599,7 @@ function bollinger(
 
     width:
       mean
-        ? (
-            (sd * 4) /
-            mean
-          ) * 100
+        ? ((sd * 4) / mean) * 100
         : 0
   };
 }
@@ -668,24 +608,7 @@ function bollinger(
    TREND
 ========================================================= */
 
-function trendAnalysis(
-  candles
-) {
-
-  if (
-    !candles ||
-    !candles.length
-  ) {
-
-    return {
-      direction: "NEUTRAL",
-      score: 50,
-      price: 0,
-      ma20: null,
-      ma50: null,
-      ma100: null
-    };
-  }
+function trendAnalysis(candles) {
 
   const closes =
     candles.map(
@@ -709,13 +632,9 @@ function trendAnalysis(
   let direction =
     "NEUTRAL";
 
-  let score =
-    50;
+  let score = 50;
 
-  if (
-    ma20 !== null &&
-    ma50 !== null
-  ) {
+  if (ma20 && ma50) {
 
     if (
       price > ma20 &&
@@ -725,8 +644,7 @@ function trendAnalysis(
       direction =
         "BULLISH";
 
-      score =
-        80;
+      score = 80;
 
     } else if (
       price < ma20 &&
@@ -736,8 +654,7 @@ function trendAnalysis(
       direction =
         "BEARISH";
 
-      score =
-        20;
+      score = 20;
 
     } else if (
       price > ma20
@@ -746,8 +663,7 @@ function trendAnalysis(
       direction =
         "BULLISH";
 
-      score =
-        65;
+      score = 65;
 
     } else if (
       price < ma20
@@ -756,8 +672,7 @@ function trendAnalysis(
       direction =
         "BEARISH";
 
-      score =
-        35;
+      score = 35;
     }
   }
 
@@ -775,14 +690,9 @@ function trendAnalysis(
    SUPPORT / RESISTANCE
 ========================================================= */
 
-function supportResistance(
-  candles
-) {
+function supportResistance(candles) {
 
-  if (
-    !candles ||
-    candles.length < 30
-  ) {
+  if (candles.length < 30) {
 
     return {
       supports: [],
@@ -850,8 +760,7 @@ function supportResistance(
     levels
       .filter(
         x =>
-          x.type ===
-          "support"
+          x.type === "support"
       )
       .filter(
         x =>
@@ -872,8 +781,7 @@ function supportResistance(
     levels
       .filter(
         x =>
-          x.type ===
-          "resistance"
+          x.type === "resistance"
       )
       .filter(
         x =>
@@ -900,20 +808,14 @@ function supportResistance(
    LIQUIDITY / HUNT
 ========================================================= */
 
-function liquidityHunt(
-  candles
-) {
+function liquidityHunt(candles) {
 
-  if (
-    !candles ||
-    candles.length < 20
-  ) {
+  if (candles.length < 20) {
 
     return {
       detected: false,
       type: "NONE",
-      reason:
-        "Insufficient data"
+      reason: "Insufficient data"
     };
   }
 
@@ -923,10 +825,7 @@ function liquidityHunt(
     ];
 
   const previous =
-    candles.slice(
-      -20,
-      -1
-    );
+    candles.slice(-20, -1);
 
   const previousHigh =
     Math.max(
@@ -943,25 +842,24 @@ function liquidityHunt(
     );
 
   const bullishSweep =
-    current.low <
-      previousLow &&
-    current.close >
-      previousLow;
+    current.low < previousLow &&
+    current.close > previousLow;
 
   const bearishSweep =
-    current.high >
-      previousHigh &&
-    current.close <
-      previousHigh;
+    current.high > previousHigh &&
+    current.close < previousHigh;
 
   if (bullishSweep) {
 
     return {
       detected: true,
+
       type:
         "BULLISH LIQUIDITY SWEEP",
+
       reason:
         "Price swept the previous low and closed back above it.",
+
       level:
         previousLow
     };
@@ -971,10 +869,13 @@ function liquidityHunt(
 
     return {
       detected: true,
+
       type:
         "BEARISH LIQUIDITY SWEEP",
+
       reason:
         "Price swept the previous high and closed back below it.",
+
       level:
         previousHigh
     };
@@ -982,7 +883,9 @@ function liquidityHunt(
 
   return {
     detected: false,
+
     type: "NONE",
+
     reason:
       "No confirmed liquidity sweep in the sampled candles."
   };
@@ -1003,8 +906,7 @@ async function footprint(
       {
         category,
         symbol,
-        limit:
-          TRADE_LIMIT
+        limit: TRADE_LIMIT
       }
     );
 
@@ -1019,9 +921,7 @@ async function footprint(
 
   const notionals = [];
 
-  for (
-    const t of trades
-  ) {
+  for (const t of trades) {
 
     const qty =
       num(t.size);
@@ -1038,19 +938,16 @@ async function footprint(
 
     if (
       String(t.side)
-        .toLowerCase() ===
-      "buy"
+        .toLowerCase() === "buy"
     ) {
 
       buyVolume += qty;
-      buyNotional +=
-        notional;
+      buyNotional += notional;
 
     } else {
 
       sellVolume += qty;
-      sellNotional +=
-        notional;
+      sellNotional += notional;
     }
   }
 
@@ -1064,10 +961,7 @@ async function footprint(
 
   const deltaPercent =
     total
-      ? (
-          delta /
-          total
-        ) * 100
+      ? (delta / total) * 100
       : 0;
 
   const med =
@@ -1079,9 +973,7 @@ async function footprint(
   let largeBuy = 0;
   let largeSell = 0;
 
-  for (
-    const t of trades
-  ) {
+  for (const t of trades) {
 
     const qty =
       num(t.size);
@@ -1100,8 +992,7 @@ async function footprint(
 
     if (
       String(t.side)
-        .toLowerCase() ===
-      "buy"
+        .toLowerCase() === "buy"
     ) {
 
       largeBuy += n;
@@ -1131,24 +1022,19 @@ async function footprint(
   }
 
   return {
-
     trades:
       trades.length,
 
     buyVolume,
-
     sellVolume,
 
     buyNotional,
-
     sellNotional,
 
     delta,
-
     deltaPercent,
 
     largeBuy,
-
     largeSell,
 
     largeThreshold,
@@ -1172,8 +1058,7 @@ async function orderBook(
       {
         category,
         symbol,
-        limit:
-          ORDERBOOK_LIMIT
+        limit: ORDERBOOK_LIMIT
       }
     );
 
@@ -1186,18 +1071,14 @@ async function orderBook(
   let bidLiquidity = 0;
   let askLiquidity = 0;
 
-  for (
-    const b of bids
-  ) {
+  for (const b of bids) {
 
     bidLiquidity +=
       num(b[0]) *
       num(b[1]);
   }
 
-  for (
-    const a of asks
-  ) {
+  for (const a of asks) {
 
     askLiquidity +=
       num(a[0]) *
@@ -1210,18 +1091,16 @@ async function orderBook(
 
   const buyShare =
     total
-      ? (
-          bidLiquidity /
-          total
-        ) * 100
+      ? bidLiquidity /
+        total *
+        100
       : 50;
 
   const sellShare =
     total
-      ? (
-          askLiquidity /
-          total
-        ) * 100
+      ? askLiquidity /
+        total *
+        100
       : 50;
 
   let pressure =
@@ -1249,8 +1128,10 @@ async function orderBook(
       .map(x => ({
         price:
           num(x[0]),
+
         quantity:
           num(x[1]),
+
         value:
           num(x[0]) *
           num(x[1])
@@ -1267,8 +1148,10 @@ async function orderBook(
       .map(x => ({
         price:
           num(x[0]),
+
         quantity:
           num(x[1]),
+
         value:
           num(x[0]) *
           num(x[1])
@@ -1315,23 +1198,17 @@ async function orderBook(
    FUTURES DATA
 ========================================================= */
 
-async function futuresData(
-  symbol
-) {
+async function futuresData(symbol) {
 
   const output = {
 
-    available:
-      true,
+    available: true,
 
-    openInterest:
-      null,
+    openInterest: null,
 
-    openInterestValue:
-      null,
+    openInterestValue: null,
 
-    fundingRate:
-      null
+    fundingRate: null
   };
 
   try {
@@ -1340,16 +1217,10 @@ async function futuresData(
       await bybit(
         "/v5/market/open-interest",
         {
-          category:
-            "linear",
-
+          category: "linear",
           symbol,
-
-          intervalTime:
-            "5min",
-
-          limit:
-            50
+          intervalTime: "5min",
+          limit: 50
         }
       );
 
@@ -1374,20 +1245,15 @@ async function futuresData(
 
   } catch (_) {}
 
-
   try {
 
     const funding =
       await bybit(
         "/v5/market/funding/history",
         {
-          category:
-            "linear",
-
+          category: "linear",
           symbol,
-
-          limit:
-            1
+          limit: 1
         }
       );
 
@@ -1428,8 +1294,7 @@ function styleAnalysis(data) {
      SCALPING
   ======================================================= */
 
-  let scalpScore =
-    50;
+  let scalpScore = 50;
 
   const scalpReasons = [];
 
@@ -1506,13 +1371,11 @@ function styleAnalysis(data) {
       scalpReasons
   });
 
-
   /* =======================================================
      DAY TRADING
   ======================================================= */
 
-  let dayScore =
-    50;
+  let dayScore = 50;
 
   const dayReasons = [];
 
@@ -1541,7 +1404,6 @@ function styleAnalysis(data) {
   }
 
   if (
-    rsiValue !== null &&
     rsiValue > 55
   ) {
 
@@ -1552,7 +1414,6 @@ function styleAnalysis(data) {
     );
 
   } else if (
-    rsiValue !== null &&
     rsiValue < 45
   ) {
 
@@ -1587,7 +1448,6 @@ function styleAnalysis(data) {
     reasons:
       dayReasons
   });
-
 
   /* =======================================================
      SWING
@@ -1651,18 +1511,15 @@ function styleAnalysis(data) {
       swingReasons
   });
 
-
   /* =======================================================
      MOMENTUM
   ======================================================= */
 
-  let momentum =
-    50;
+  let momentum = 50;
 
   const momentumReasons = [];
 
   if (
-    rsiValue !== null &&
     rsiValue >= 55
   ) {
 
@@ -1674,7 +1531,6 @@ function styleAnalysis(data) {
   }
 
   if (
-    rsiValue !== null &&
     rsiValue <= 45
   ) {
 
@@ -1732,13 +1588,11 @@ function styleAnalysis(data) {
       momentumReasons
   });
 
-
   /* =======================================================
      SMART MONEY
   ======================================================= */
 
-  let sm =
-    50;
+  let sm = 50;
 
   const smReasons = [];
 
@@ -1832,115 +1686,10 @@ function styleAnalysis(data) {
 }
 
 /* =========================================================
-   TIMEFRAME CHAT
-   هر تایم‌فریم نظر خودش را می‌دهد.
-========================================================= */
-
-function buildTimeframeChat(
-  timeframeOpinions
-) {
-
-  const messages = [];
-
-  for (
-    let i = 0;
-    i < timeframeOpinions.length;
-    i++
-  ) {
-
-    const current =
-      timeframeOpinions[i];
-
-    const previous =
-      timeframeOpinions[i - 1];
-
-    if (!previous) continue;
-
-    if (
-      current.direction ===
-      previous.direction
-    ) {
-
-      messages.push(
-        `${current.timeframe} confirms ${previous.timeframe}: ${current.direction}.`
-      );
-
-    } else if (
-      current.direction ===
-      "NEUTRAL"
-    ) {
-
-      messages.push(
-        `${current.timeframe} is neutral while ${previous.timeframe} is ${previous.direction}.`
-      );
-
-    } else {
-
-      messages.push(
-        `${current.timeframe} conflicts with ${previous.timeframe}: ${current.direction} vs ${previous.direction}.`
-      );
-    }
-  }
-
-  const bullish =
-    timeframeOpinions.filter(
-      x =>
-        x.direction ===
-        "BULLISH"
-    ).length;
-
-  const bearish =
-    timeframeOpinions.filter(
-      x =>
-        x.direction ===
-        "BEARISH"
-    ).length;
-
-  const neutral =
-    timeframeOpinions.filter(
-      x =>
-        x.direction ===
-        "NEUTRAL"
-    ).length;
-
-  const total =
-    timeframeOpinions.length;
-
-  if (
-    bullish > bearish &&
-    bullish > neutral
-  ) {
-
-    messages.push(
-      `Higher timeframe discussion favors buyers: ${bullish}/${total} active timeframes are bullish.`
-    );
-
-  } else if (
-    bearish > bullish &&
-    bearish > neutral
-  ) {
-
-    messages.push(
-      `Higher timeframe discussion favors sellers: ${bearish}/${total} active timeframes are bearish.`
-    );
-
-  } else {
-
-    messages.push(
-      `Timeframe discussion is mixed: bullish ${bullish}, bearish ${bearish}, neutral ${neutral}.`
-    );
-  }
-
-  return messages;
-}
-
-/* =========================================================
    DEEP ANALYSIS
 ========================================================= */
 
-async function analyzeSymbol(
-  input
-) {
+async function analyzeSymbol(input) {
 
   const found =
     await findSymbol(input);
@@ -1962,21 +1711,31 @@ async function analyzeSymbol(
   const symbol =
     found.symbol;
 
-
-  /* =======================================================
-     LOAD ALL DATA
-  ======================================================= */
-
   const [
-    timeframeData,
+    candles1m,
+    candles15m,
+    candles1h,
     footprintData,
     orderBookData
   ] =
     await Promise.all([
 
-      getAllTimeframes(
+      getKlines(
         category,
-        symbol
+        symbol,
+        "1"
+      ),
+
+      getKlines(
+        category,
+        symbol,
+        "15"
+      ),
+
+      getKlines(
+        category,
+        symbol,
+        "60"
       ),
 
       footprint(
@@ -1990,46 +1749,40 @@ async function analyzeSymbol(
       )
     ]);
 
-
-  /* =======================================================
-     PRIMARY TIMEFRAMES
-  ======================================================= */
-
-  const candles1m =
-    timeframeData["1"]?.candles ||
-    [];
-
-  const trend1m =
-    timeframeData["1"]?.trend ||
-    trendAnalysis(
-      candles1m
-    );
-
-  const trend15m =
-    timeframeData["15"]?.trend ||
-    null;
-
-  const trend1h =
-    timeframeData["60"]?.trend ||
-    null;
-
-
-  if (!candles1m.length) {
+  if (
+    !candles1m.length ||
+    !candles15m.length
+  ) {
 
     throw new Error(
-      "Bybit returned no 1-minute market data."
+      "Insufficient market data"
     );
   }
-
-
-  /* =======================================================
-     1M INDICATORS
-  ======================================================= */
 
   const close1m =
     candles1m.map(
       x => x.close
     );
+
+  const close15m =
+    candles15m.map(
+      x => x.close
+    );
+
+  const trend1m =
+    trendAnalysis(
+      candles1m
+    );
+
+  const trend15m =
+    trendAnalysis(
+      candles15m
+    );
+
+  const trend1h =
+    candles1h.length
+      ? trendAnalysis(candles1h)
+      : null;
 
   const rsiValue =
     rsi(
@@ -2054,37 +1807,20 @@ async function analyzeSymbol(
       20
     );
 
-
-  /* =======================================================
-     LEVELS
-  ======================================================= */
-
   const levels =
     supportResistance(
       candles1m
     );
-
-
-  /* =======================================================
-     LIQUIDITY
-  ======================================================= */
 
   const hunt =
     liquidityHunt(
       candles1m
     );
 
-
-  /* =======================================================
-     FUTURES
-  ======================================================= */
-
-  let futures =
-    null;
+  let futures = null;
 
   if (
-    category ===
-    "linear"
+    category === "linear"
   ) {
 
     futures =
@@ -2092,11 +1828,6 @@ async function analyzeSymbol(
         symbol
       );
   }
-
-
-  /* =======================================================
-     STYLES
-  ======================================================= */
 
   const styles =
     styleAnalysis({
@@ -2122,190 +1853,42 @@ async function analyzeSymbol(
         trend1m.price
     });
 
-
-  /* =======================================================
-     TIMEFRAME OPINIONS
-  ======================================================= */
-
-  const timeframeOpinions = [];
-
-  for (
-    const tf of TIMEFRAMES
-  ) {
-
-    const item =
-      timeframeData[
-        tf.interval
-      ];
-
-    if (!item) continue;
-
-    const trend =
-      item.trend;
-
-    timeframeOpinions.push({
-
-      timeframe:
-        tf.label,
-
-      interval:
-        tf.interval,
-
-      direction:
-        trend.direction,
-
-      score:
-        round(
-          trend.score,
-          1
-        ),
-
-      price:
-        trend.price,
-
-      ma20:
-        trend.ma20,
-
-      ma50:
-        trend.ma50,
-
-      ma100:
-        trend.ma100,
-
-      opinion:
-        trend.direction
-    });
-  }
-
-
-  /* =======================================================
-     TIMEFRAME VOTES
-  ======================================================= */
-
-  const bullishTF =
-    timeframeOpinions.filter(
-      x =>
-        x.direction ===
-        "BULLISH"
-    ).length;
-
-  const bearishTF =
-    timeframeOpinions.filter(
-      x =>
-        x.direction ===
-        "BEARISH"
-    ).length;
-
-  const neutralTF =
-    timeframeOpinions.filter(
-      x =>
-        x.direction ===
-        "NEUTRAL"
-    ).length;
-
-  const activeTF =
-    timeframeOpinions.length;
-
-
-  let timeframeConsensus =
-    "NEUTRAL";
-
-  if (
-    bullishTF >
-      bearishTF &&
-    bullishTF >
-      neutralTF
-  ) {
-
-    timeframeConsensus =
-      "BULLISH";
-
-  } else if (
-    bearishTF >
-      bullishTF &&
-    bearishTF >
-      neutralTF
-  ) {
-
-    timeframeConsensus =
-      "BEARISH";
-  }
-
-
-  /* =======================================================
-     TIMEFRAME CHAT
-  ======================================================= */
-
-  const timeframeChat =
-    buildTimeframeChat(
-      timeframeOpinions
-    );
-
-
-  /* =======================================================
-     CONFIRMATIONS
-  ======================================================= */
-
   const confirmations = [];
 
+  /* =======================================================
+     1M + 15M
+  ======================================================= */
 
   if (
-    trend15m &&
     trend1m.direction ===
     trend15m.direction
   ) {
 
     confirmations.push(
-      `1M and 15M agree: ${trend1m.direction}`
-    );
-
-  } else if (
-    trend15m
-  ) {
-
-    confirmations.push(
-      "1M and 15M are not fully aligned."
-    );
-  }
-
-
-  if (
-    trend1h &&
-    trend1m.direction ===
-    trend1h.direction
-  ) {
-
-    confirmations.push(
-      `1M and 1H agree: ${trend1m.direction}`
-    );
-  }
-
-
-  if (
-    timeframeConsensus ===
-    "BULLISH"
-  ) {
-
-    confirmations.push(
-      `Multi-timeframe consensus is bullish (${bullishTF}/${activeTF}).`
-    );
-
-  } else if (
-    timeframeConsensus ===
-    "BEARISH"
-  ) {
-
-    confirmations.push(
-      `Multi-timeframe consensus is bearish (${bearishTF}/${activeTF}).`
+      `1m and 15m trend agree: ${trend1m.direction}`
     );
 
   } else {
 
     confirmations.push(
-      "Multi-timeframe structure is mixed."
+      "1m and 15m trends are not fully aligned."
     );
   }
 
+  /* =======================================================
+     1H
+  ======================================================= */
+
+  if (trend1h) {
+
+    confirmations.push(
+      `1h trend: ${trend1h.direction}`
+    );
+  }
+
+  /* =======================================================
+     FOOTPRINT
+  ======================================================= */
 
   if (
     footprintData.pressure ===
@@ -2317,7 +1900,6 @@ async function analyzeSymbol(
     );
   }
 
-
   if (
     footprintData.pressure ===
     "SELL PRESSURE"
@@ -2328,6 +1910,9 @@ async function analyzeSymbol(
     );
   }
 
+  /* =======================================================
+     ORDER BOOK
+  ======================================================= */
 
   if (
     orderBookData.pressure ===
@@ -2339,7 +1924,6 @@ async function analyzeSymbol(
     );
   }
 
-
   if (
     orderBookData.pressure ===
     "SELL PRESSURE"
@@ -2350,19 +1934,19 @@ async function analyzeSymbol(
     );
   }
 
+  /* =======================================================
+     HUNT
+  ======================================================= */
 
-  if (
-    hunt.detected
-  ) {
+  if (hunt.detected) {
 
     confirmations.push(
       hunt.type
     );
   }
 
-
   /* =======================================================
-     OVERALL SCORE
+     OVERALL
   ======================================================= */
 
   let overall =
@@ -2372,42 +1956,13 @@ async function analyzeSymbol(
       )
     );
 
-
   if (
-    timeframeConsensus ===
-    "BULLISH"
-  ) {
-
-    overall += 8;
-
-  } else if (
-    timeframeConsensus ===
-    "BEARISH"
-  ) {
-
-    overall -= 8;
-  }
-
-
-  if (
-    trend15m &&
     trend15m.direction ===
     trend1m.direction
   ) {
 
     overall += 5;
   }
-
-
-  if (
-    trend1h &&
-    trend1h.direction ===
-    trend1m.direction
-  ) {
-
-    overall += 4;
-  }
-
 
   overall =
     Math.max(
@@ -2417,7 +1972,6 @@ async function analyzeSymbol(
         overall
       )
     );
-
 
   let verdict =
     "NEUTRAL";
@@ -2436,11 +1990,6 @@ async function analyzeSymbol(
     verdict =
       "BEARISH";
   }
-
-
-  /* =======================================================
-     RETURN
-  ======================================================= */
 
   return {
 
@@ -2468,41 +2017,6 @@ async function analyzeSymbol(
     price:
       trend1m.price,
 
-
-    /* ================================================
-       ALL AVAILABLE TIMEFRAMES
-    ================================================= */
-
-    timeframes:
-      timeframeOpinions,
-
-
-    timeframeConsensus: {
-
-      direction:
-        timeframeConsensus,
-
-      bullish:
-        bullishTF,
-
-      bearish:
-        bearishTF,
-
-      neutral:
-        neutralTF,
-
-      active:
-        activeTF
-    },
-
-
-    /* ================================================
-       TIMEFRAME CHAT
-    ================================================= */
-
-    timeframeChat,
-
-
     trend: {
 
       oneMinute:
@@ -2514,7 +2028,6 @@ async function analyzeSymbol(
       oneHour:
         trend1h
     },
-
 
     indicators: {
 
@@ -2531,33 +2044,25 @@ async function analyzeSymbol(
         bollingerValue
     },
 
-
     supportResistance:
       levels,
-
 
     liquidity: {
 
       hunt
     },
 
-
     footprint:
       footprintData,
-
 
     orderBook:
       orderBookData,
 
-
     futures,
-
 
     styles,
 
-
     confirmations,
-
 
     overallScore:
       round(
@@ -2573,7 +2078,7 @@ async function analyzeSymbol(
 }
 
 /* =========================================================
-   HTML ESCAPE
+   HTML HELPERS
 ========================================================= */
 
 function htmlEscape(v) {
@@ -2601,9 +2106,7 @@ function htmlEscape(v) {
    ANALYSIS HTML
 ========================================================= */
 
-function analysisHtml(
-  data
-) {
+function analysisHtml(data) {
 
   if (!data.ok) {
 
@@ -2613,7 +2116,6 @@ function analysisHtml(
       </div>
     `;
   }
-
 
   const styles =
     data.styles
@@ -2649,7 +2151,9 @@ function analysisHtml(
 
             ${s.reasons
               .map(r =>
-                `<li>${htmlEscape(r)}</li>`
+                `<li>
+                  ${htmlEscape(r)}
+                </li>`
               )
               .join("")}
 
@@ -2659,7 +2163,6 @@ function analysisHtml(
 
       `)
       .join("");
-
 
   const supports =
     data.supportResistance.supports
@@ -2672,7 +2175,6 @@ function analysisHtml(
       .join(" • ") ||
     "No confirmed level";
 
-
   const resistances =
     data.supportResistance.resistances
       .map(
@@ -2684,7 +2186,6 @@ function analysisHtml(
       .join(" • ") ||
     "No confirmed level";
 
-
   const f =
     data.footprint;
 
@@ -2693,59 +2194,6 @@ function analysisHtml(
 
   const hunt =
     data.liquidity.hunt;
-
-
-  /* =======================================================
-     TIMEFRAMES HTML
-  ======================================================= */
-
-  const timeframeHtml =
-    data.timeframes
-      .map(tf => `
-
-        <div class="data-box">
-
-          <div class="style-top">
-
-            <b>
-              ⏱ ${htmlEscape(tf.timeframe)}
-            </b>
-
-            <span>
-              ${htmlEscape(tf.direction)}
-            </span>
-
-          </div>
-
-          <p>
-            Score:
-            ${tf.score}/100
-          </p>
-
-          <small>
-            Price:
-            ${formatPrice(tf.price)}
-          </small>
-
-        </div>
-
-      `)
-      .join("");
-
-
-  /* =======================================================
-     TIMEFRAME CHAT HTML
-  ======================================================= */
-
-  const timeframeChatHtml =
-    data.timeframeChat
-      .map(x => `
-        <div>
-          • ${htmlEscape(x)}
-        </div>
-      `)
-      .join("");
-
 
   return `
 
@@ -2760,21 +2208,19 @@ function analysisHtml(
           </small>
 
           <h2>
-            🪙 ${htmlEscape(data.symbol)}
+            🪙
+            ${htmlEscape(
+              data.symbol
+            )}
           </h2>
 
-          <small>
-            ${htmlEscape(data.market.type)}
-          </small>
-
         </div>
-
 
         <div
           class="verdict ${data.verdict.toLowerCase()}"
         >
 
-          ${htmlEscape(data.verdict)}
+          ${data.verdict}
 
           <small>
             ${data.overallScore}/100
@@ -2783,7 +2229,6 @@ function analysisHtml(
         </div>
 
       </div>
-
 
       <div class="cards">
 
@@ -2794,16 +2239,17 @@ function analysisHtml(
           </small>
 
           <b>
-            ${formatPrice(data.price)}
+            ${formatPrice(
+              data.price
+            )}
           </b>
 
         </div>
 
-
         <div class="card">
 
           <small>
-            1M
+            1M TREND
           </small>
 
           <b>
@@ -2812,23 +2258,33 @@ function analysisHtml(
 
         </div>
 
+        <div class="card">
+
+          <small>
+            15M CONFIRMATION
+          </small>
+
+          <b>
+            ${data.trend.fifteenMinute.direction}
+          </b>
+
+        </div>
 
         <div class="card">
 
           <small>
-            15M
+            1H TREND
           </small>
 
           <b>
             ${
-              data.trend.fifteenMinute
-                ? data.trend.fifteenMinute.direction
+              data.trend.oneHour
+                ? data.trend.oneHour.direction
                 : "N/A"
             }
           </b>
 
         </div>
-
 
         <div class="card">
 
@@ -2837,78 +2293,15 @@ function analysisHtml(
           </small>
 
           <b>
-            ${
-              data.indicators.rsi !== null
-                ? round(
-                    data.indicators.rsi,
-                    2
-                  )
-                : "N/A"
-            }
+            ${round(
+              data.indicators.rsi,
+              2
+            )}
           </b>
 
         </div>
 
       </div>
-
-
-      <h3>
-        ⏱ Multi-Timeframe Analysis
-      </h3>
-
-      <div class="data-grid">
-
-        ${timeframeHtml}
-
-      </div>
-
-
-      <div class="data-box">
-
-        <b>
-          🧠 Multi-Timeframe Consensus:
-          ${htmlEscape(
-            data.timeframeConsensus.direction
-          )}
-        </b>
-
-        <p>
-
-          🟢 Bullish:
-          ${data.timeframeConsensus.bullish}
-
-          &nbsp; | &nbsp;
-
-          🔴 Bearish:
-          ${data.timeframeConsensus.bearish}
-
-          &nbsp; | &nbsp;
-
-          ⚪ Neutral:
-          ${data.timeframeConsensus.neutral}
-
-        </p>
-
-        <small>
-
-          Active Timeframes:
-          ${data.timeframeConsensus.active}
-
-        </small>
-
-      </div>
-
-
-      <h3>
-        💬 Timeframe Discussion
-      </h3>
-
-      <div class="conclusion">
-
-        ${timeframeChatHtml}
-
-      </div>
-
 
       <h3>
         📊 Trading Styles
@@ -2916,11 +2309,9 @@ function analysisHtml(
 
       ${styles}
 
-
       <h3>
         🎯 Support / Resistance
       </h3>
-
 
       <div class="levels">
 
@@ -2931,11 +2322,12 @@ function analysisHtml(
           </b>
 
           <p>
-            ${htmlEscape(supports)}
+            ${htmlEscape(
+              supports
+            )}
           </p>
 
         </div>
-
 
         <div>
 
@@ -2944,27 +2336,31 @@ function analysisHtml(
           </b>
 
           <p>
-            ${htmlEscape(resistances)}
+            ${htmlEscape(
+              resistances
+            )}
           </p>
 
         </div>
 
       </div>
 
-
       <h3>
         💧 Liquidity / Hunt
       </h3>
 
-
       <div class="data-box">
 
         <b>
-          ${htmlEscape(hunt.type)}
+          ${htmlEscape(
+            hunt.type
+          )}
         </b>
 
         <p>
-          ${htmlEscape(hunt.reason)}
+          ${htmlEscape(
+            hunt.reason
+          )}
         </p>
 
         ${
@@ -2972,7 +2368,9 @@ function analysisHtml(
             ? `
               <small>
                 Level:
-                ${formatPrice(hunt.level)}
+                ${formatPrice(
+                  hunt.level
+                )}
               </small>
             `
             : ""
@@ -2980,186 +2378,131 @@ function analysisHtml(
 
       </div>
 
-
       <h3>
         👣 Footprint
       </h3>
 
-
       <div class="data-grid">
 
         <div>
-
           Buy Volume
-
           <b>
             ${round(
               f.buyVolume,
               4
             )}
           </b>
-
         </div>
 
-
         <div>
-
           Sell Volume
-
           <b>
             ${round(
               f.sellVolume,
               4
             )}
           </b>
-
         </div>
 
-
         <div>
-
           Delta
-
           <b>
             ${round(
               f.delta,
               4
             )}
           </b>
-
         </div>
 
-
         <div>
-
           Delta %
-
           <b>
             ${round(
               f.deltaPercent,
               2
             )}%
           </b>
-
         </div>
 
-
         <div>
-
           Pressure
-
           <b>
-            ${htmlEscape(
-              f.pressure
-            )}
+            ${f.pressure}
           </b>
-
         </div>
 
-
         <div>
-
           Large Buy
-
           <b>
             $${Math.round(
               f.largeBuy
             ).toLocaleString()}
           </b>
-
         </div>
 
-
         <div>
-
           Large Sell
-
           <b>
             $${Math.round(
               f.largeSell
             ).toLocaleString()}
           </b>
-
         </div>
 
       </div>
-
 
       <h3>
         📚 Order Book
       </h3>
 
-
       <div class="data-grid">
 
         <div>
-
           Buy Share
-
           <b>
             ${round(
               ob.buyShare,
               2
             )}%
           </b>
-
         </div>
 
-
         <div>
-
           Sell Share
-
           <b>
             ${round(
               ob.sellShare,
               2
             )}%
           </b>
-
         </div>
 
-
         <div>
-
           Best Bid
-
           <b>
             ${formatPrice(
               ob.bestBid
             )}
           </b>
-
         </div>
 
-
         <div>
-
           Best Ask
-
           <b>
             ${formatPrice(
               ob.bestAsk
             )}
           </b>
-
         </div>
 
-
         <div>
-
           Pressure
-
           <b>
-            ${htmlEscape(
-              ob.pressure
-            )}
+            ${ob.pressure}
           </b>
-
         </div>
 
       </div>
-
 
       ${
         data.futures
@@ -3177,13 +2520,12 @@ function analysisHtml(
 
                 <b>
                   ${
-                    data.futures.openInterest ??
-                    "N/A"
+                    data.futures.openInterest
+                      ?? "N/A"
                   }
                 </b>
 
               </div>
-
 
               <div>
 
@@ -3191,16 +2533,17 @@ function analysisHtml(
 
                 <b>
 
-                  $${data.futures.openInterestValue
+                  $${data.futures
+                    .openInterestValue
                     ? Math.round(
-                        data.futures.openInterestValue
+                        data.futures
+                          .openInterestValue
                       ).toLocaleString()
                     : "N/A"}
 
                 </b>
 
               </div>
-
 
               <div>
 
@@ -3209,8 +2552,10 @@ function analysisHtml(
                 <b>
 
                   ${
-                    data.futures.fundingRate !== null
-                      ? data.futures.fundingRate
+                    data.futures
+                      .fundingRate !== null
+                      ? data.futures
+                          .fundingRate
                       : "N/A"
                   }
 
@@ -3224,35 +2569,30 @@ function analysisHtml(
           : ""
       }
 
-
       <h3>
         🧠 Deep Conclusion
       </h3>
-
 
       <div class="conclusion">
 
         ${
           data.confirmations
-            .map(x =>
-              `<div>
-                • ${htmlEscape(x)}
-              </div>`
+            .map(
+              x =>
+                `<div>
+                  • ${htmlEscape(x)}
+                </div>`
             )
             .join("")
         }
 
       </div>
 
-
       <footer>
-
-        📊 Analysis based on real Bybit market data
-
+        📊 Analysis based on Bybit information
       </footer>
 
     </section>
-
   `;
 }
 
@@ -3290,10 +2630,10 @@ export default {
       );
     }
 
-
     const url =
-      new URL(request.url);
-
+      new URL(
+        request.url
+      );
 
     try {
 
@@ -3308,8 +2648,7 @@ export default {
 
         return json({
 
-          ok:
-            true,
+          ok: true,
 
           service:
             "Global Pulse",
@@ -3331,7 +2670,6 @@ export default {
         });
       }
 
-
       /* ===================================================
          CRYPTO JSON
       =================================================== */
@@ -3351,8 +2689,7 @@ export default {
 
           return json({
 
-            ok:
-              false,
+            ok: false,
 
             error:
               "Symbol is required"
@@ -3360,22 +2697,19 @@ export default {
           }, 400);
         }
 
-
         if (
           blocked(input)
         ) {
 
           return json({
 
-            ok:
-              false,
+            ok: false,
 
             error:
               "This symbol is not available."
 
           }, 403);
         }
-
 
         const result =
           await analyzeSymbol(
@@ -3386,7 +2720,6 @@ export default {
           result
         );
       }
-
 
       /* ===================================================
          CRYPTO HTML
@@ -3407,8 +2740,7 @@ export default {
           return new Response(
             "<h2>Symbol is required</h2>",
             {
-              status:
-                400,
+              status: 400,
 
               headers: {
                 "content-type":
@@ -3417,7 +2749,6 @@ export default {
             }
           );
         }
-
 
         if (
           blocked(input)
@@ -3426,8 +2757,7 @@ export default {
           return new Response(
             "<h2>Symbol not available</h2>",
             {
-              status:
-                403,
+              status: 403,
 
               headers: {
                 "content-type":
@@ -3437,12 +2767,10 @@ export default {
           );
         }
 
-
         const result =
           await analyzeSymbol(
             input
           );
-
 
         return new Response(
           analysisHtml(
@@ -3457,15 +2785,13 @@ export default {
         );
       }
 
-
       /* ===================================================
          NOT FOUND
       =================================================== */
 
       return json({
 
-        ok:
-          false,
+        ok: false,
 
         error:
           "Not Found",
@@ -3474,7 +2800,6 @@ export default {
           url.pathname
 
       }, 404);
-
 
     } catch (error) {
 
@@ -3487,15 +2812,12 @@ export default {
 
           path:
             url.pathname
-
         })
       );
 
-
       return json({
 
-        ok:
-          false,
+        ok: false,
 
         error:
           error.message ||
