@@ -1,13 +1,22 @@
 const TELEGRAM_API = "https://api.telegram.org";
 
+/* =========================
+   JSON RESPONSE
+========================= */
+
 function json(data, status = 200) {
   return new Response(JSON.stringify(data, null, 2), {
     status,
     headers: {
-      "content-type": "application/json; charset=utf-8"
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store"
     }
   });
 }
+
+/* =========================
+   TELEGRAM API
+========================= */
 
 async function telegram(env, method, body = {}) {
   if (!env.TELEGRAM_BOT_TOKEN) {
@@ -36,17 +45,62 @@ async function telegram(env, method, body = {}) {
   return data;
 }
 
+/* =========================
+   SEND MESSAGE
+========================= */
+
 async function sendMessage(env, text) {
   if (!env.TELEGRAM_CHANNEL_ID) {
     throw new Error("TELEGRAM_CHANNEL_ID is not configured");
   }
 
+  if (!text || !String(text).trim()) {
+    throw new Error("Message text is empty");
+  }
+
   return telegram(env, "sendMessage", {
     chat_id: env.TELEGRAM_CHANNEL_ID,
-    text,
+    text: String(text),
     disable_web_page_preview: true
   });
 }
+
+/* =========================
+   SEND HTML MESSAGE
+========================= */
+
+async function sendHtmlMessage(env, html) {
+  if (!env.TELEGRAM_CHANNEL_ID) {
+    throw new Error("TELEGRAM_CHANNEL_ID is not configured");
+  }
+
+  if (!html || !String(html).trim()) {
+    throw new Error("HTML message is empty");
+  }
+
+  return telegram(env, "sendMessage", {
+    chat_id: env.TELEGRAM_CHANNEL_ID,
+    text: String(html),
+    parse_mode: "HTML",
+    disable_web_page_preview: true
+  });
+}
+
+/* =========================
+   REQUEST BODY
+========================= */
+
+async function readJson(request) {
+  try {
+    return await request.json();
+  } catch {
+    return {};
+  }
+}
+
+/* =========================
+   MAIN WORKER
+========================= */
 
 export default {
   async fetch(request, env) {
@@ -55,10 +109,10 @@ export default {
     try {
 
       /* =========================
-         Health Check
+         HEALTH CHECK
       ========================= */
 
-      if (url.pathname === "/") {
+      if (request.method === "GET" && url.pathname === "/") {
         return json({
           ok: true,
           service: "Global Pulse",
@@ -75,11 +129,14 @@ export default {
       }
 
       /* =========================
-         Debug Environment
-         توکن هرگز نمایش داده نمی‌شود
+         DEBUG ENVIRONMENT
+         TOKEN NEVER SHOWN
       ========================= */
 
-      if (url.pathname === "/debug-env") {
+      if (
+        request.method === "GET" &&
+        url.pathname === "/debug-env"
+      ) {
         return json({
           ok: true,
 
@@ -98,66 +155,163 @@ export default {
       }
 
       /* =========================
-         پیدا کردن آیدی کانال
+         TELEGRAM BOT TEST
       ========================= */
 
-      if (url.pathname === "/find-channel") {
-        const updates = await telegram(env, "getUpdates");
-
-        return json({
-          ok: true,
-          updates: updates.result || []
-        });
-      }
-
-      /* =========================
-         تست ربات
-      ========================= */
-
-      if (url.pathname === "/test-telegram") {
+      if (
+        request.method === "GET" &&
+        url.pathname === "/test-telegram"
+      ) {
         const me = await telegram(env, "getMe");
 
         return json({
           ok: true,
           bot: me.result,
-          channel_id: env.TELEGRAM_CHANNEL_ID || null
+          channel_id:
+            env.TELEGRAM_CHANNEL_ID || null
         });
       }
 
       /* =========================
-         تست ارسال به کانال
+         CHANNEL TEST
       ========================= */
 
-      if (url.pathname === "/test-channel") {
+      if (
+        request.method === "GET" &&
+        url.pathname === "/test-channel"
+      ) {
         const message =
           "🌍 Global Pulse\n\n" +
           "✅ اتصال Worker به کانال برقرار است.\n\n" +
           "🤖 Global Pulse Assistant\n" +
           "⚙️ سیستم انتشار خودکار آماده راه‌اندازی است.";
 
-        const result = await sendMessage(env, message);
+        const result =
+          await sendMessage(env, message);
 
         return json({
           ok: true,
-          message_id: result.result.message_id,
-          channel_id: env.TELEGRAM_CHANNEL_ID
+          message_id:
+            result.result.message_id,
+          channel_id:
+            env.TELEGRAM_CHANNEL_ID
         });
       }
 
       /* =========================
-         Telegram Webhook
+         FIND CHANNEL / UPDATES
+      ========================= */
+
+      if (
+        request.method === "GET" &&
+        url.pathname === "/find-channel"
+      ) {
+        const updates =
+          await telegram(env, "getUpdates");
+
+        return json({
+          ok: true,
+          updates:
+            updates.result || []
+        });
+      }
+
+      /* =========================
+         SEND CUSTOM MESSAGE
+         POST /send
+      ========================= */
+
+      if (
+        request.method === "POST" &&
+        url.pathname === "/send"
+      ) {
+        const body =
+          await readJson(request);
+
+        const text =
+          body.text ||
+          body.message ||
+          "";
+
+        if (!text) {
+          return json(
+            {
+              ok: false,
+              error:
+                "text or message is required"
+            },
+            400
+          );
+        }
+
+        const result =
+          await sendMessage(env, text);
+
+        return json({
+          ok: true,
+          message_id:
+            result.result.message_id,
+          channel_id:
+            env.TELEGRAM_CHANNEL_ID
+        });
+      }
+
+      /* =========================
+         SEND HTML MESSAGE
+         POST /send-html
+      ========================= */
+
+      if (
+        request.method === "POST" &&
+        url.pathname === "/send-html"
+      ) {
+        const body =
+          await readJson(request);
+
+        const html =
+          body.html ||
+          body.text ||
+          "";
+
+        if (!html) {
+          return json(
+            {
+              ok: false,
+              error:
+                "html or text is required"
+            },
+            400
+          );
+        }
+
+        const result =
+          await sendHtmlMessage(env, html);
+
+        return json({
+          ok: true,
+          message_id:
+            result.result.message_id,
+          channel_id:
+            env.TELEGRAM_CHANNEL_ID
+        });
+      }
+
+      /* =========================
+         TELEGRAM WEBHOOK
       ========================= */
 
       if (
         request.method === "POST" &&
         url.pathname === "/telegram-webhook"
       ) {
-        const update = await request.json();
+        const update =
+          await request.json();
 
         console.log(
           JSON.stringify({
             type: "telegram_update",
-            update_id: update.update_id || null
+            update_id:
+              update.update_id || null
           })
         );
 
@@ -179,12 +333,20 @@ export default {
       );
 
     } catch (error) {
-      console.error(error);
+
+      console.error(
+        JSON.stringify({
+          error:
+            error.message || String(error),
+          path: url.pathname
+        })
+      );
 
       return json(
         {
           ok: false,
-          error: error.message || String(error)
+          error:
+            error.message || String(error)
         },
         500
       );
