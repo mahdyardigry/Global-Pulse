@@ -6,27 +6,19 @@ const TRADE_LIMIT = 1000;
 const ORDERBOOK_LIMIT = 50;
 const LIVE_CHART_LIMIT = 120;
 
-/* =========================================================
-   ALL TIMEFRAMES
-========================================================= */
-
 const TIMEFRAMES = [
-  { key: "1m",  interval: "1",   label: "1 Minute" },
-  { key: "3m",  interval: "3",   label: "3 Minutes" },
-  { key: "5m",  interval: "5",   label: "5 Minutes" },
-  { key: "15m", interval: "15",  label: "15 Minutes" },
-  { key: "30m", interval: "30",  label: "30 Minutes" },
-  { key: "1h",  interval: "60",  label: "1 Hour" },
-  { key: "2h",  interval: "120", label: "2 Hours" },
-  { key: "4h",  interval: "240", label: "4 Hours" },
-  { key: "6h",  interval: "360", label: "6 Hours" },
-  { key: "12h", interval: "720", label: "12 Hours" },
-  { key: "1D",  interval: "D",   label: "1 Day" }
+  { key: "1m",  api: "1",   label: "1 دقیقه" },
+  { key: "3m",  api: "3",   label: "3 دقیقه" },
+  { key: "5m",  api: "5",   label: "5 دقیقه" },
+  { key: "15m", api: "15",  label: "15 دقیقه" },
+  { key: "30m", api: "30",  label: "30 دقیقه" },
+  { key: "1h",  api: "60",  label: "1 ساعت" },
+  { key: "2h",  api: "120", label: "2 ساعت" },
+  { key: "4h",  api: "240", label: "4 ساعت" },
+  { key: "6h",  api: "360", label: "6 ساعت" },
+  { key: "12h", api: "720", label: "12 ساعت" },
+  { key: "1d",  api: "D",   label: "1 روز" }
 ];
-
-const ALLOWED_INTERVALS = TIMEFRAMES.map(
-  x => x.interval
-);
 
 const BLOCKED = [
   "iran",
@@ -76,29 +68,19 @@ function upper(v) {
 
 function blocked(text) {
   const s = clean(text).toLowerCase();
-  return BLOCKED.some(x =>
-    s.includes(x.toLowerCase())
-  );
+  return BLOCKED.some(x => s.includes(x.toLowerCase()));
 }
 
 function avg(arr) {
   if (!arr.length) return 0;
-
-  return arr.reduce(
-    (a, b) => a + b,
-    0
-  ) / arr.length;
+  return arr.reduce((a, b) => a + b, 0) / arr.length;
 }
 
 function median(arr) {
   if (!arr.length) return 0;
 
-  const a = [...arr].sort(
-    (x, y) => x - y
-  );
-
-  const m =
-    Math.floor(a.length / 2);
+  const a = [...arr].sort((x, y) => x - y);
+  const m = Math.floor(a.length / 2);
 
   return a.length % 2
     ? a[m]
@@ -107,17 +89,12 @@ function median(arr) {
 
 function pct(a, b) {
   if (!b) return 0;
-
-  return (
-    (a - b) /
-    b
-  ) * 100;
+  return ((a - b) / b) * 100;
 }
 
 function round(v, d = 2) {
   const n = num(v);
   const p = Math.pow(10, d);
-
   return Math.round(n * p) / p;
 }
 
@@ -127,29 +104,20 @@ function formatPrice(v) {
   if (!n) return "0";
 
   if (n >= 1000) {
-    return n.toLocaleString(
-      "en-US",
-      {
-        maximumFractionDigits: 2
-      }
-    );
+    return n.toLocaleString("en-US", {
+      maximumFractionDigits: 2
+    });
   }
 
   if (n >= 1) {
-    return n.toLocaleString(
-      "en-US",
-      {
-        maximumFractionDigits: 4
-      }
-    );
+    return n.toLocaleString("en-US", {
+      maximumFractionDigits: 4
+    });
   }
 
-  return n.toLocaleString(
-    "en-US",
-    {
-      maximumFractionDigits: 8
-    }
-  );
+  return n.toLocaleString("en-US", {
+    maximumFractionDigits: 8
+  });
 }
 
 function htmlEscape(v) {
@@ -158,6 +126,10 @@ function htmlEscape(v) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+function getTimeframe(api) {
+  return TIMEFRAMES.find(x => x.api === String(api)) || TIMEFRAMES[0];
 }
 
 /* =========================================================
@@ -169,7 +141,6 @@ async function bybit(path, params = {}) {
   const qs = new URLSearchParams();
 
   for (const [k, v] of Object.entries(params)) {
-
     if (
       v !== undefined &&
       v !== null &&
@@ -179,35 +150,28 @@ async function bybit(path, params = {}) {
     }
   }
 
-  const query =
-    qs.toString();
+  const query = qs.toString();
 
   const url =
     query
       ? `${BYBIT}${path}?${query}`
       : `${BYBIT}${path}`;
 
-  const r =
-    await fetch(url, {
-      headers: {
-        "accept": "application/json"
-      }
-    });
+  const r = await fetch(url, {
+    headers: {
+      "accept": "application/json"
+    }
+  });
 
   if (!r.ok) {
-    throw new Error(
-      `Bybit HTTP ${r.status}`
-    );
+    throw new Error(`Bybit HTTP ${r.status}`);
   }
 
-  const data =
-    await r.json();
+  const data = await r.json();
 
   if (data.retCode !== 0) {
     throw new Error(
-      `Bybit ${data.retCode}: ${
-        data.retMsg || "API error"
-      }`
+      `Bybit ${data.retCode}: ${data.retMsg || "API error"}`
     );
   }
 
@@ -235,19 +199,14 @@ async function findSymbol(input) {
   let symbol = raw;
 
   if (!symbol.endsWith("USDT")) {
-    symbol =
-      `${symbol}USDT`;
+    symbol = `${symbol}USDT`;
   }
 
   async function searchCategory(category) {
 
     let cursor = "";
 
-    for (
-      let page = 0;
-      page < 10;
-      page++
-    ) {
+    for (let page = 0; page < 10; page++) {
 
       const params = {
         category,
@@ -261,15 +220,12 @@ async function findSymbol(input) {
       let result;
 
       try {
-
         result =
           await bybit(
             "/v5/market/instruments-info",
             params
           );
-
       } catch (_) {
-
         return null;
       }
 
@@ -279,9 +235,8 @@ async function findSymbol(input) {
           : [];
 
       let item =
-        list.find(
-          x =>
-            upper(x.symbol) === symbol
+        list.find(x =>
+          upper(x.symbol) === symbol
         );
 
       if (item) {
@@ -291,10 +246,9 @@ async function findSymbol(input) {
       if (!raw.endsWith("USDT")) {
 
         item =
-          list.find(
-            x =>
-              upper(x.baseCoin) === raw &&
-              upper(x.quoteCoin) === "USDT"
+          list.find(x =>
+            upper(x.baseCoin) === raw &&
+            upper(x.quoteCoin) === "USDT"
           );
 
         if (item) {
@@ -313,48 +267,33 @@ async function findSymbol(input) {
     return null;
   }
 
-  /* Futures first */
-
   const futuresItem =
-    await searchCategory(
-      "linear"
-    );
+    await searchCategory("linear");
 
   if (futuresItem) {
-
     return {
       found: true,
       category: "linear",
       market: "Futures",
       symbol: futuresItem.symbol,
-      baseCoin:
-        futuresItem.baseCoin || "",
-      quoteCoin:
-        futuresItem.quoteCoin || "",
-      contractType:
-        futuresItem.contractType || "",
+      baseCoin: futuresItem.baseCoin || "",
+      quoteCoin: futuresItem.quoteCoin || "",
+      contractType: futuresItem.contractType || "",
       raw: futuresItem
     };
   }
 
-  /* Spot */
-
   const spotItem =
-    await searchCategory(
-      "spot"
-    );
+    await searchCategory("spot");
 
   if (spotItem) {
-
     return {
       found: true,
       category: "spot",
       market: "Spot",
       symbol: spotItem.symbol,
-      baseCoin:
-        spotItem.baseCoin || "",
-      quoteCoin:
-        spotItem.quoteCoin || "",
+      baseCoin: spotItem.baseCoin || "",
+      quoteCoin: spotItem.quoteCoin || "",
       contractType: "",
       raw: spotItem
     };
@@ -392,40 +331,22 @@ async function getKlines(
   limit = KLINE_LIMIT
 ) {
 
-  const safeInterval =
-    ALLOWED_INTERVALS.includes(
-      String(interval)
-    )
-      ? String(interval)
-      : "1";
-
-  const safeLimit =
-    Math.max(
-      20,
-      Math.min(
-        1000,
-        num(limit, KLINE_LIMIT)
-      )
-    );
-
   const result =
     await bybit(
       "/v5/market/kline",
       {
         category,
         symbol,
-        interval: safeInterval,
-        limit: safeLimit
+        interval,
+        limit
       }
     );
 
-  return parseKlines(
-    result.list
-  );
+  return parseKlines(result.list);
 }
 
 /* =========================================================
-   ALL TIMEFRAME DATA
+   ALL TIMEFRAMES
 ========================================================= */
 
 async function getAllTimeframes(
@@ -435,71 +356,46 @@ async function getAllTimeframes(
 
   const results = {};
 
-  /*
-   * همه تایم‌فریم‌ها را موازی دریافت می‌کنیم
-   * تا تحلیل کامل‌تر و سریع‌تر باشد.
-   */
-
   const requests =
-    TIMEFRAMES.map(
-      async tf => {
+    TIMEFRAMES.map(async tf => {
 
-        try {
+      try {
 
-          const candles =
-            await getKlines(
-              category,
-              symbol,
-              tf.interval,
-              KLINE_LIMIT
-            );
+        const candles =
+          await getKlines(
+            category,
+            symbol,
+            tf.api,
+            KLINE_LIMIT
+          );
 
-          const trend =
+        results[tf.key] = {
+          key: tf.key,
+          api: tf.api,
+          label: tf.label,
+          candles,
+          trend:
             candles.length
               ? trendAnalysis(candles)
-              : null;
+              : null
+        };
 
-          return {
-            key: tf.key,
-            interval:
-              tf.interval,
-            label:
-              tf.label,
-            available:
-              candles.length > 0,
-            candles,
-            trend
-          };
+      } catch (error) {
 
-        } catch (error) {
-
-          return {
-            key: tf.key,
-            interval:
-              tf.interval,
-            label:
-              tf.label,
-            available: false,
-            candles: [],
-            trend: null,
-            error:
-              error.message ||
-              String(error)
-          };
-        }
+        results[tf.key] = {
+          key: tf.key,
+          api: tf.api,
+          label: tf.label,
+          candles: [],
+          trend: null,
+          error:
+            error.message ||
+            String(error)
+        };
       }
-    );
+    });
 
-  const data =
-    await Promise.all(
-      requests
-    );
-
-  for (const item of data) {
-
-    results[item.key] =
-      item;
-  }
+  await Promise.all(requests);
 
   return results;
 }
@@ -520,38 +416,26 @@ async function getLiveChartData(
       20,
       Math.min(
         1000,
-        num(
-          limit,
-          LIVE_CHART_LIMIT
-        )
+        num(limit, LIVE_CHART_LIMIT)
       )
     );
-
-  const safeInterval =
-    ALLOWED_INTERVALS.includes(
-      String(interval)
-    )
-      ? String(interval)
-      : "1";
 
   const candles =
     await getKlines(
       category,
       symbol,
-      safeInterval,
+      interval,
       safeLimit
     );
 
-  return candles.map(
-    c => ({
-      time: c.time,
-      open: c.open,
-      high: c.high,
-      low: c.low,
-      close: c.close,
-      volume: c.volume
-    })
-  );
+  return candles.map(c => ({
+    time: c.time,
+    open: c.open,
+    high: c.high,
+    low: c.low,
+    close: c.close,
+    volume: c.volume
+  }));
 }
 
 /* =========================================================
@@ -560,9 +444,7 @@ async function getLiveChartData(
 
 function sma(values, period) {
 
-  if (
-    values.length < period
-  ) {
+  if (values.length < period) {
     return null;
   }
 
@@ -575,9 +457,7 @@ function sma(values, period) {
 
 function ema(values, period) {
 
-  if (
-    values.length < period
-  ) {
+  if (values.length < period) {
     return null;
   }
 
@@ -585,19 +465,13 @@ function ema(values, period) {
     2 / (period + 1);
 
   let e =
-    avg(
-      values.slice(
-        0,
-        period
-      )
-    );
+    avg(values.slice(0, period));
 
   for (
     let i = period;
     i < values.length;
     i++
   ) {
-
     e =
       values[i] * k +
       e * (1 - k);
@@ -606,15 +480,9 @@ function ema(values, period) {
   return e;
 }
 
-function rsi(
-  values,
-  period = 14
-) {
+function rsi(values, period = 14) {
 
-  if (
-    values.length <
-    period + 1
-  ) {
+  if (values.length < period + 1) {
     return null;
   }
 
@@ -662,44 +530,31 @@ function rsi(
 
     avgGain =
       (
-        avgGain *
-        (period - 1) +
+        avgGain * (period - 1) +
         g
       ) / period;
 
     avgLoss =
       (
-        avgLoss *
-        (period - 1) +
+        avgLoss * (period - 1) +
         l
       ) / period;
   }
 
-  if (
-    avgLoss === 0
-  ) {
+  if (avgLoss === 0) {
     return 100;
   }
 
   const rs =
-    avgGain /
-    avgLoss;
+    avgGain / avgLoss;
 
-  return (
-    100 -
-    100 / (1 + rs)
-  );
+  return 100 -
+    100 / (1 + rs);
 }
 
-function atr(
-  candles,
-  period = 14
-) {
+function atr(candles, period = 14) {
 
-  if (
-    candles.length <
-    period + 1
-  ) {
+  if (candles.length < period + 1) {
     return null;
   }
 
@@ -721,12 +576,10 @@ function atr(
       Math.max(
         c.high - c.low,
         Math.abs(
-          c.high -
-          p.close
+          c.high - p.close
         ),
         Math.abs(
-          c.low -
-          p.close
+          c.low - p.close
         )
       )
     );
@@ -739,9 +592,7 @@ function atr(
 
 function macd(values) {
 
-  if (
-    values.length < 35
-  ) {
+  if (values.length < 35) {
     return null;
   }
 
@@ -761,14 +612,9 @@ function macd(values) {
   return fast - slow;
 }
 
-function bollinger(
-  values,
-  period = 20
-) {
+function bollinger(values, period = 20) {
 
-  if (
-    values.length < period
-  ) {
+  if (values.length < period) {
     return null;
   }
 
@@ -780,32 +626,24 @@ function bollinger(
 
   const variance =
     avg(
-      data.map(
-        x =>
-          Math.pow(
-            x - mean,
-            2
-          )
+      data.map(x =>
+        Math.pow(
+          x - mean,
+          2
+        )
       )
     );
 
   const sd =
-    Math.sqrt(
-      variance
-    );
+    Math.sqrt(variance);
 
   return {
     middle: mean,
-    upper:
-      mean + sd * 2,
-    lower:
-      mean - sd * 2,
+    upper: mean + sd * 2,
+    lower: mean - sd * 2,
     width:
       mean
-        ? (
-            (sd * 4) /
-            mean
-          ) * 100
+        ? ((sd * 4) / mean) * 100
         : 0
   };
 }
@@ -814,9 +652,7 @@ function bollinger(
    TREND
 ========================================================= */
 
-function trendAnalysis(
-  candles
-) {
+function trendAnalysis(candles) {
 
   const closes =
     candles.map(
@@ -829,41 +665,27 @@ function trendAnalysis(
     ];
 
   const ma20 =
-    sma(
-      closes,
-      20
-    );
+    sma(closes, 20);
 
   const ma50 =
-    sma(
-      closes,
-      50
-    );
+    sma(closes, 50);
 
   const ma100 =
-    sma(
-      closes,
-      100
-    );
+    sma(closes, 100);
 
   let direction =
     "NEUTRAL";
 
   let score = 50;
 
-  if (
-    ma20 &&
-    ma50
-  ) {
+  if (ma20 && ma50) {
 
     if (
       price > ma20 &&
       ma20 > ma50
     ) {
 
-      direction =
-        "BULLISH";
-
+      direction = "BULLISH";
       score = 80;
 
     } else if (
@@ -871,27 +693,21 @@ function trendAnalysis(
       ma20 < ma50
     ) {
 
-      direction =
-        "BEARISH";
-
+      direction = "BEARISH";
       score = 20;
 
     } else if (
       price > ma20
     ) {
 
-      direction =
-        "BULLISH";
-
+      direction = "BULLISH";
       score = 65;
 
     } else if (
       price < ma20
     ) {
 
-      direction =
-        "BEARISH";
-
+      direction = "BEARISH";
       score = 35;
     }
   }
@@ -910,13 +726,9 @@ function trendAnalysis(
    SUPPORT / RESISTANCE
 ========================================================= */
 
-function supportResistance(
-  candles
-) {
+function supportResistance(candles) {
 
-  if (
-    candles.length < 30
-  ) {
+  if (candles.length < 30) {
 
     return {
       supports: [],
@@ -992,12 +804,8 @@ function supportResistance(
       )
       .sort(
         (a, b) =>
-          Math.abs(
-            price - a.price
-          ) -
-          Math.abs(
-            price - b.price
-          )
+          Math.abs(price - a.price) -
+          Math.abs(price - b.price)
       )
       .slice(0, 5);
 
@@ -1013,12 +821,8 @@ function supportResistance(
       )
       .sort(
         (a, b) =>
-          Math.abs(
-            price - a.price
-          ) -
-          Math.abs(
-            price - b.price
-          )
+          Math.abs(price - a.price) -
+          Math.abs(price - b.price)
       )
       .slice(0, 5);
 
@@ -1032,19 +836,14 @@ function supportResistance(
    LIQUIDITY / HUNT
 ========================================================= */
 
-function liquidityHunt(
-  candles
-) {
+function liquidityHunt(candles) {
 
-  if (
-    candles.length < 20
-  ) {
+  if (candles.length < 20) {
 
     return {
       detected: false,
       type: "NONE",
-      reason:
-        "Insufficient data"
+      reason: "Insufficient data"
     };
   }
 
@@ -1054,10 +853,7 @@ function liquidityHunt(
     ];
 
   const previous =
-    candles.slice(
-      -20,
-      -1
-    );
+    candles.slice(-20, -1);
 
   const previousHigh =
     Math.max(
@@ -1074,44 +870,32 @@ function liquidityHunt(
     );
 
   const bullishSweep =
-    current.low <
-      previousLow &&
-    current.close >
-      previousLow;
+    current.low < previousLow &&
+    current.close > previousLow;
 
   const bearishSweep =
-    current.high >
-      previousHigh &&
-    current.close <
-      previousHigh;
+    current.high > previousHigh &&
+    current.close < previousHigh;
 
-  if (
-    bullishSweep
-  ) {
+  if (bullishSweep) {
 
     return {
       detected: true,
-      type:
-        "BULLISH LIQUIDITY SWEEP",
+      type: "BULLISH LIQUIDITY SWEEP",
       reason:
         "Price swept the previous low and closed back above it.",
-      level:
-        previousLow
+      level: previousLow
     };
   }
 
-  if (
-    bearishSweep
-  ) {
+  if (bearishSweep) {
 
     return {
       detected: true,
-      type:
-        "BEARISH LIQUIDITY SWEEP",
+      type: "BEARISH LIQUIDITY SWEEP",
       reason:
         "Price swept the previous high and closed back below it.",
-      level:
-        previousHigh
+      level: previousHigh
     };
   }
 
@@ -1138,8 +922,7 @@ async function footprint(
       {
         category,
         symbol,
-        limit:
-          TRADE_LIMIT
+        limit: TRADE_LIMIT
       }
     );
 
@@ -1154,9 +937,7 @@ async function footprint(
 
   const notionals = [];
 
-  for (
-    const t of trades
-  ) {
+  for (const t of trades) {
 
     const qty =
       num(t.size);
@@ -1173,19 +954,16 @@ async function footprint(
 
     if (
       String(t.side)
-        .toLowerCase() ===
-      "buy"
+        .toLowerCase() === "buy"
     ) {
 
       buyVolume += qty;
-      buyNotional +=
-        notional;
+      buyNotional += notional;
 
     } else {
 
       sellVolume += qty;
-      sellNotional +=
-        notional;
+      sellNotional += notional;
     }
   }
 
@@ -1199,10 +977,7 @@ async function footprint(
 
   const deltaPercent =
     total
-      ? (
-          delta /
-          total
-        ) * 100
+      ? (delta / total) * 100
       : 0;
 
   const med =
@@ -1214,9 +989,7 @@ async function footprint(
   let largeBuy = 0;
   let largeSell = 0;
 
-  for (
-    const t of trades
-  ) {
+  for (const t of trades) {
 
     const qty =
       num(t.size);
@@ -1228,16 +1001,14 @@ async function footprint(
       qty * price;
 
     if (
-      n <
-      largeThreshold
+      n < largeThreshold
     ) {
       continue;
     }
 
     if (
       String(t.side)
-        .toLowerCase() ===
-      "buy"
+        .toLowerCase() === "buy"
     ) {
 
       largeBuy += n;
@@ -1267,27 +1038,16 @@ async function footprint(
   }
 
   return {
-    trades:
-      trades.length,
-
+    trades: trades.length,
     buyVolume,
-
     sellVolume,
-
     buyNotional,
-
     sellNotional,
-
     delta,
-
     deltaPercent,
-
     largeBuy,
-
     largeSell,
-
     largeThreshold,
-
     pressure
   };
 }
@@ -1307,8 +1067,7 @@ async function orderBook(
       {
         category,
         symbol,
-        limit:
-          ORDERBOOK_LIMIT
+        limit: ORDERBOOK_LIMIT
       }
     );
 
@@ -1321,18 +1080,14 @@ async function orderBook(
   let bidLiquidity = 0;
   let askLiquidity = 0;
 
-  for (
-    const b of bids
-  ) {
+  for (const b of bids) {
 
     bidLiquidity +=
       num(b[0]) *
       num(b[1]);
   }
 
-  for (
-    const a of asks
-  ) {
+  for (const a of asks) {
 
     askLiquidity +=
       num(a[0]) *
@@ -1345,18 +1100,16 @@ async function orderBook(
 
   const buyShare =
     total
-      ? (
-          bidLiquidity /
-          total
-        ) * 100
+      ? bidLiquidity /
+        total *
+        100
       : 50;
 
   const sellShare =
     total
-      ? (
-          askLiquidity /
-          total
-        ) * 100
+      ? askLiquidity /
+        total *
+        100
       : 50;
 
   let pressure =
@@ -1381,17 +1134,13 @@ async function orderBook(
 
   const buyWalls =
     bids
-      .map(
-        x => ({
-          price:
-            num(x[0]),
-          quantity:
-            num(x[1]),
-          value:
-            num(x[0]) *
-            num(x[1])
-        })
-      )
+      .map(x => ({
+        price: num(x[0]),
+        quantity: num(x[1]),
+        value:
+          num(x[0]) *
+          num(x[1])
+      }))
       .sort(
         (a, b) =>
           b.value -
@@ -1401,17 +1150,13 @@ async function orderBook(
 
   const sellWalls =
     asks
-      .map(
-        x => ({
-          price:
-            num(x[0]),
-          quantity:
-            num(x[1]),
-          value:
-            num(x[0]) *
-            num(x[1])
-        })
-      )
+      .map(x => ({
+        price: num(x[0]),
+        quantity: num(x[1]),
+        value:
+          num(x[0]) *
+          num(x[1])
+      }))
       .sort(
         (a, b) =>
           b.value -
@@ -1454,9 +1199,7 @@ async function orderBook(
    FUTURES DATA
 ========================================================= */
 
-async function futuresData(
-  symbol
-) {
+async function futuresData(symbol) {
 
   const output = {
 
@@ -1464,8 +1207,7 @@ async function futuresData(
 
     openInterest: null,
 
-    openInterestValue:
-      null,
+    openInterestValue: null,
 
     fundingRate: null
   };
@@ -1476,14 +1218,9 @@ async function futuresData(
       await bybit(
         "/v5/market/open-interest",
         {
-          category:
-            "linear",
-
+          category: "linear",
           symbol,
-
-          intervalTime:
-            "5min",
-
+          intervalTime: "5min",
           limit: 50
         }
       );
@@ -1491,9 +1228,7 @@ async function futuresData(
     const list =
       oi.list || [];
 
-    if (
-      list.length
-    ) {
+    if (list.length) {
 
       const latest =
         list[0];
@@ -1517,11 +1252,8 @@ async function futuresData(
       await bybit(
         "/v5/market/funding/history",
         {
-          category:
-            "linear",
-
+          category: "linear",
           symbol,
-
           limit: 1
         }
       );
@@ -1529,9 +1261,7 @@ async function futuresData(
     const list =
       funding.list || [];
 
-    if (
-      list.length
-    ) {
+    if (list.length) {
 
       output.fundingRate =
         num(
@@ -1560,8 +1290,6 @@ function styleAnalysis(data) {
   } = data;
 
   const styles = [];
-
-  /* SCALPING */
 
   let scalpScore = 50;
   const scalpReasons = [];
@@ -1616,8 +1344,7 @@ function styleAnalysis(data) {
 
   styles.push({
 
-    name:
-      "Scalping",
+    name: "Scalping",
 
     score:
       Math.max(
@@ -1638,8 +1365,6 @@ function styleAnalysis(data) {
     reasons:
       scalpReasons
   });
-
-  /* DAY */
 
   let dayScore = 50;
   const dayReasons = [];
@@ -1669,7 +1394,6 @@ function styleAnalysis(data) {
   }
 
   if (
-    rsiValue !== null &&
     rsiValue > 55
   ) {
 
@@ -1680,7 +1404,6 @@ function styleAnalysis(data) {
     );
 
   } else if (
-    rsiValue !== null &&
     rsiValue < 45
   ) {
 
@@ -1693,8 +1416,7 @@ function styleAnalysis(data) {
 
   styles.push({
 
-    name:
-      "Day Trading",
+    name: "Day Trading",
 
     score:
       Math.max(
@@ -1715,8 +1437,6 @@ function styleAnalysis(data) {
     reasons:
       dayReasons
   });
-
-  /* SWING */
 
   let swingScore =
     trend.score;
@@ -1753,8 +1473,7 @@ function styleAnalysis(data) {
 
   styles.push({
 
-    name:
-      "Swing Trading",
+    name: "Swing Trading",
 
     score:
       Math.max(
@@ -1776,13 +1495,10 @@ function styleAnalysis(data) {
       swingReasons
   });
 
-  /* MOMENTUM */
-
   let momentum = 50;
   const momentumReasons = [];
 
   if (
-    rsiValue !== null &&
     rsiValue >= 55
   ) {
 
@@ -1794,7 +1510,6 @@ function styleAnalysis(data) {
   }
 
   if (
-    rsiValue !== null &&
     rsiValue <= 45
   ) {
 
@@ -1829,8 +1544,7 @@ function styleAnalysis(data) {
 
   styles.push({
 
-    name:
-      "Momentum",
+    name: "Momentum",
 
     score:
       Math.max(
@@ -1851,8 +1565,6 @@ function styleAnalysis(data) {
     reasons:
       momentumReasons
   });
-
-  /* SMART MONEY */
 
   let sm = 50;
   const smReasons = [];
@@ -1920,8 +1632,7 @@ function styleAnalysis(data) {
 
   styles.push({
 
-    name:
-      "Smart Money",
+    name: "Smart Money",
 
     score:
       Math.max(
@@ -1947,154 +1658,74 @@ function styleAnalysis(data) {
 }
 
 /* =========================================================
-   TIMEFRAME SUMMARY
+   TIMEFRAME SCORE
 ========================================================= */
 
-function buildTimeframeSummary(
-  allTimeframes
-) {
+function timeframeScore(timeframes) {
 
-  return TIMEFRAMES.map(
-    tf => {
+  const rows = [];
 
-      const item =
-        allTimeframes[
-          tf.key
-        ];
+  for (const tf of TIMEFRAMES) {
 
-      return {
-
-        key:
-          tf.key,
-
-        label:
-          tf.label,
-
-        interval:
-          tf.interval,
-
-        available:
-          Boolean(
-            item?.available
-          ),
-
-        trend:
-          item?.trend || null
-      };
-    }
-  );
-}
-
-/* =========================================================
-   MULTI TIMEFRAME ALIGNMENT
-========================================================= */
-
-function multiTimeframeAlignment(
-  allTimeframes
-) {
-
-  let bullish = 0;
-  let bearish = 0;
-  let neutral = 0;
-
-  const directions = {};
-
-  for (
-    const tf of TIMEFRAMES
-  ) {
-
-    const trend =
-      allTimeframes[
-        tf.key
-      ]?.trend;
-
-    const direction =
-      trend?.direction ||
-      "N/A";
-
-    directions[tf.key] =
-      direction;
+    const item =
+      timeframes[tf.key];
 
     if (
-      direction ===
-      "BULLISH"
+      !item ||
+      !item.trend
     ) {
-
-      bullish++;
-
-    } else if (
-      direction ===
-      "BEARISH"
-    ) {
-
-      bearish++;
-
-    } else {
-
-      neutral++;
+      rows.push({
+        key: tf.key,
+        label: tf.label,
+        direction: "N/A",
+        score: null
+      });
+      continue;
     }
+
+    rows.push({
+      key: tf.key,
+      label: tf.label,
+      direction:
+        item.trend.direction,
+      score:
+        round(
+          item.trend.score,
+          1
+        ),
+      price:
+        item.trend.price,
+      ma20:
+        item.trend.ma20,
+      ma50:
+        item.trend.ma50,
+      ma100:
+        item.trend.ma100
+    });
   }
 
-  const available =
-    bullish +
-    bearish +
-    neutral;
+  const valid =
+    rows.filter(
+      x =>
+        x.score !== null
+    );
 
-  let direction =
-    "NEUTRAL";
-
-  if (
-    bullish > bearish &&
-    bullish >=
-      Math.ceil(
-        available * 0.55
-      )
-  ) {
-
-    direction =
-      "BULLISH";
-
-  } else if (
-    bearish > bullish &&
-    bearish >=
-      Math.ceil(
-        available * 0.55
-      )
-  ) {
-
-    direction =
-      "BEARISH";
-  }
-
-  const agreement =
-    available
-      ? Math.max(
-          bullish,
-          bearish
-        ) /
-        available *
-        100
-      : 0;
+  const overall =
+    valid.length
+      ? avg(
+          valid.map(
+            x => x.score
+          )
+        )
+      : 50;
 
   return {
-
-    direction,
-
-    bullish,
-
-    bearish,
-
-    neutral,
-
-    available,
-
-    agreement:
+    rows,
+    overall:
       round(
-        agreement,
+        overall,
         1
-      ),
-
-    directions
+      )
   };
 }
 
@@ -2102,18 +1733,12 @@ function multiTimeframeAlignment(
    DEEP ANALYSIS
 ========================================================= */
 
-async function analyzeSymbol(
-  input
-) {
+async function analyzeSymbol(input) {
 
   const found =
-    await findSymbol(
-      input
-    );
+    await findSymbol(input);
 
-  if (
-    !found.found
-  ) {
+  if (!found.found) {
 
     return {
 
@@ -2130,41 +1755,17 @@ async function analyzeSymbol(
   const symbol =
     found.symbol;
 
-  /*
-   * تمام تایم‌فریم‌ها
-   * از 1m تا 1D
-   */
-
-  const allTimeframes =
-    await getAllTimeframes(
-      category,
-      symbol
-    );
-
-  const candles1m =
-    allTimeframes[
-      "1m"
-    ]?.candles || [];
-
-  const candles15m =
-    allTimeframes[
-      "15m"
-    ]?.candles || [];
-
-  const candles1h =
-    allTimeframes[
-      "1h"
-    ]?.candles || [];
-
-  /*
-   * داده‌های لحظه‌ای سنگین
-   */
-
   const [
+    allTimeframes,
     footprintData,
     orderBookData
   ] =
     await Promise.all([
+
+      getAllTimeframes(
+        category,
+        symbol
+      ),
 
       footprint(
         category,
@@ -2177,12 +1778,22 @@ async function analyzeSymbol(
       )
     ]);
 
+  const candles1m =
+    allTimeframes["1m"]?.candles || [];
+
+  const candles15m =
+    allTimeframes["15m"]?.candles || [];
+
+  const candles1h =
+    allTimeframes["1h"]?.candles || [];
+
   if (
-    !candles1m.length
+    !candles1m.length ||
+    !candles15m.length
   ) {
 
     throw new Error(
-      "Insufficient 1m market data"
+      "Insufficient market data"
     );
   }
 
@@ -2192,24 +1803,19 @@ async function analyzeSymbol(
     );
 
   const trend1m =
-    allTimeframes[
-      "1m"
-    ]?.trend ||
     trendAnalysis(
       candles1m
     );
 
   const trend15m =
-    allTimeframes[
-      "15m"
-    ]?.trend ||
-    null;
+    trendAnalysis(
+      candles15m
+    );
 
   const trend1h =
-    allTimeframes[
-      "1h"
-    ]?.trend ||
-    null;
+    candles1h.length
+      ? trendAnalysis(candles1h)
+      : null;
 
   const rsiValue =
     rsi(
@@ -2281,19 +1887,13 @@ async function analyzeSymbol(
     });
 
   const timeframeSummary =
-    buildTimeframeSummary(
-      allTimeframes
-    );
-
-  const alignment =
-    multiTimeframeAlignment(
+    timeframeScore(
       allTimeframes
     );
 
   const confirmations = [];
 
   if (
-    trend15m &&
     trend1m.direction ===
     trend15m.direction
   ) {
@@ -2309,19 +1909,7 @@ async function analyzeSymbol(
     );
   }
 
-  if (
-    alignment.direction !==
-    "NEUTRAL"
-  ) {
-
-    confirmations.push(
-      `${alignment.bullish} bullish / ${alignment.bearish} bearish timeframes. Overall multi-timeframe bias: ${alignment.direction}.`
-    );
-  }
-
-  if (
-    trend1h
-  ) {
+  if (trend1h) {
 
     confirmations.push(
       `1h trend: ${trend1h.direction}`
@@ -2368,10 +1956,7 @@ async function analyzeSymbol(
     );
   }
 
-  if (
-    hunt.detected
-  ) {
-
+  if (hunt.detected) {
     confirmations.push(
       hunt.type
     );
@@ -2384,75 +1969,16 @@ async function analyzeSymbol(
       )
     );
 
-  /*
-   * تایید 15 دقیقه
-   */
-
   if (
-    trend15m &&
     trend15m.direction ===
     trend1m.direction
   ) {
-
     overall += 5;
   }
 
-  /*
-   * تایید چند تایم‌فریمی
-   */
-
-  if (
-    alignment.direction ===
-    trend1m.direction
-  ) {
-
-    overall += 5;
-  }
-
-  /*
-   * اگر تایم‌فریم‌های بلندتر
-   * کاملاً مخالف باشند،
-   * امتیاز کمی تعدیل می‌شود.
-   */
-
-  const longDirections = [
-    allTimeframes[
-      "4h"
-    ]?.trend?.direction,
-
-    allTimeframes[
-      "6h"
-    ]?.trend?.direction,
-
-    allTimeframes[
-      "12h"
-    ]?.trend?.direction,
-
-    allTimeframes[
-      "1D"
-    ]?.trend?.direction
-  ].filter(Boolean);
-
-  const oppositeLong =
-    longDirections.filter(
-      d =>
-        d !==
-        trend1m.direction &&
-        d !== "NEUTRAL"
-    ).length;
-
-  if (
-    oppositeLong >= 3
-  ) {
-
-    overall -= 7;
-
-  } else if (
-    oppositeLong >= 2
-  ) {
-
-    overall -= 3;
-  }
+  overall =
+    overall * 0.65 +
+    timeframeSummary.overall * 0.35;
 
   overall =
     Math.max(
@@ -2469,14 +1995,11 @@ async function analyzeSymbol(
   if (
     overall >= 65
   ) {
-
     verdict =
       "BULLISH";
-
   } else if (
     overall <= 35
   ) {
-
     verdict =
       "BEARISH";
   }
@@ -2507,66 +2030,22 @@ async function analyzeSymbol(
     price:
       trend1m.price,
 
+    timeframes:
+      allTimeframes,
+
+    timeframeSummary,
+
     trend: {
 
       oneMinute:
         trend1m,
 
-      threeMinute:
-        allTimeframes[
-          "3m"
-        ]?.trend || null,
-
-      fiveMinute:
-        allTimeframes[
-          "5m"
-        ]?.trend || null,
-
       fifteenMinute:
         trend15m,
 
-      thirtyMinute:
-        allTimeframes[
-          "30m"
-        ]?.trend || null,
-
       oneHour:
-        trend1h,
-
-      twoHour:
-        allTimeframes[
-          "2h"
-        ]?.trend || null,
-
-      fourHour:
-        allTimeframes[
-          "4h"
-        ]?.trend || null,
-
-      sixHour:
-        allTimeframes[
-          "6h"
-        ]?.trend || null,
-
-      twelveHour:
-        allTimeframes[
-          "12h"
-        ]?.trend || null,
-
-      oneDay:
-        allTimeframes[
-          "1D"
-        ]?.trend || null,
-
-      all:
-        allTimeframes
+        trend1h
     },
-
-    timeframes:
-      timeframeSummary,
-
-    multiTimeframe:
-      alignment,
 
     indicators: {
 
@@ -2587,7 +2066,6 @@ async function analyzeSymbol(
       levels,
 
     liquidity: {
-
       hunt
     },
 
@@ -2620,19 +2098,13 @@ async function analyzeSymbol(
    CHART HTML
 ========================================================= */
 
-function chartHtml(
-  data
-) {
+function chartHtml(data) {
 
   const symbol =
-    htmlEscape(
-      data.symbol
-    );
+    htmlEscape(data.symbol);
 
   const category =
-    htmlEscape(
-      data.market.category
-    );
+    htmlEscape(data.market.category);
 
   return `
 
@@ -2743,9 +2215,7 @@ function chartHtml(
       id="chart-wrap"
     >
 
-      <canvas
-        id="live-chart"
-      ></canvas>
+      <canvas id="live-chart"></canvas>
 
       <div
         id="chart-loading"
@@ -2810,72 +2280,45 @@ function chartHtml(
       ${JSON.stringify(data.market.category)};
 
     const canvas =
-      document.getElementById(
-        "live-chart"
-      );
+      document.getElementById("live-chart");
 
     const ctx =
-      canvas.getContext(
-        "2d"
-      );
+      canvas.getContext("2d");
 
     const wrap =
-      document.getElementById(
-        "chart-wrap"
-      );
+      document.getElementById("chart-wrap");
 
     const loading =
-      document.getElementById(
-        "chart-loading"
-      );
+      document.getElementById("chart-loading");
 
     const statusText =
-      document.getElementById(
-        "chart-status-text"
-      );
+      document.getElementById("chart-status-text");
 
     const livePrice =
-      document.getElementById(
-        "live-price"
-      );
+      document.getElementById("live-price");
 
     const liveChange =
-      document.getElementById(
-        "live-change"
-      );
+      document.getElementById("live-change");
 
     const cOpen =
-      document.getElementById(
-        "c-open"
-      );
+      document.getElementById("c-open");
 
     const cHigh =
-      document.getElementById(
-        "c-high"
-      );
+      document.getElementById("c-high");
 
     const cLow =
-      document.getElementById(
-        "c-low"
-      );
+      document.getElementById("c-low");
 
     const cClose =
-      document.getElementById(
-        "c-close"
-      );
+      document.getElementById("c-close");
 
     const cVolume =
-      document.getElementById(
-        "c-volume"
-      );
+      document.getElementById("c-volume");
 
     const closeBtn =
-      document.getElementById(
-        "chart-close"
-      );
+      document.getElementById("chart-close");
 
-    let interval =
-      "1";
+    let interval = "1";
 
     let candles = [];
 
@@ -2885,44 +2328,29 @@ function chartHtml(
 
     function resizeCanvas() {
 
-      if (
-        destroyed
-      ) {
-        return;
-      }
-
       const rect =
         wrap.getBoundingClientRect();
 
       const dpr =
-        window.devicePixelRatio ||
-        1;
+        window.devicePixelRatio || 1;
 
       canvas.width =
         Math.max(
           300,
-          Math.floor(
-            rect.width *
-            dpr
-          )
+          Math.floor(rect.width * dpr)
         );
 
       canvas.height =
         Math.max(
           260,
-          Math.floor(
-            rect.height *
-            dpr
-          )
+          Math.floor(rect.height * dpr)
         );
 
       canvas.style.width =
-        rect.width +
-        "px";
+        rect.width + "px";
 
       canvas.style.height =
-        rect.height +
-        "px";
+        rect.height + "px";
 
       ctx.setTransform(
         dpr,
@@ -2941,34 +2369,24 @@ function chartHtml(
       const n =
         Number(v);
 
-      if (
-        !Number.isFinite(n)
-      ) {
+      if (!Number.isFinite(n)) {
         return "—";
       }
 
-      if (
-        n >= 1000
-      ) {
-
+      if (n >= 1000) {
         return n.toLocaleString(
           "en-US",
           {
-            maximumFractionDigits:
-              2
+            maximumFractionDigits: 2
           }
         );
       }
 
-      if (
-        n >= 1
-      ) {
-
+      if (n >= 1) {
         return n.toLocaleString(
           "en-US",
           {
-            maximumFractionDigits:
-              4
+            maximumFractionDigits: 4
           }
         );
       }
@@ -2976,8 +2394,7 @@ function chartHtml(
       return n.toLocaleString(
         "en-US",
         {
-          maximumFractionDigits:
-            8
+          maximumFractionDigits: 8
         }
       );
     }
@@ -2987,67 +2404,44 @@ function chartHtml(
       const n =
         Number(v);
 
-      if (
-        !Number.isFinite(n)
-      ) {
+      if (!Number.isFinite(n)) {
         return "—";
       }
 
-      if (
-        n >= 1000000000
-      ) {
-
+      if (n >= 1000000000) {
         return (
-          (
-            n /
-            1000000000
-          ).toFixed(2) +
-          "B"
+          (n / 1000000000)
+            .toFixed(2)
+          + "B"
         );
       }
 
-      if (
-        n >= 1000000
-      ) {
-
+      if (n >= 1000000) {
         return (
-          (
-            n /
-            1000000
-          ).toFixed(2) +
-          "M"
+          (n / 1000000)
+            .toFixed(2)
+          + "M"
         );
       }
 
-      if (
-        n >= 1000
-      ) {
-
+      if (n >= 1000) {
         return (
-          (
-            n /
-            1000
-          ).toFixed(2) +
-          "K"
+          (n / 1000)
+            .toFixed(2)
+          + "K"
         );
       }
 
       return n.toFixed(2);
     }
 
-    function setStatus(
-      text
-    ) {
-
-      statusText.textContent =
-        text;
+    function setStatus(text) {
+      statusText.textContent = text;
     }
 
     function updateInfo() {
 
-      if (
-        !candles.length
-      ) {
+      if (!candles.length) {
         return;
       }
 
@@ -3067,18 +2461,14 @@ function chartHtml(
       const change =
         first.close
           ? (
-              (
-                last.close -
-                first.close
-              ) /
+              (last.close -
+                first.close) /
               first.close
             ) * 100
           : 0;
 
       livePrice.textContent =
-        priceText(
-          last.close
-        );
+        priceText(last.close);
 
       liveChange.textContent =
         (
@@ -3090,29 +2480,19 @@ function chartHtml(
         "%";
 
       cOpen.textContent =
-        priceText(
-          last.open
-        );
+        priceText(last.open);
 
       cHigh.textContent =
-        priceText(
-          last.high
-        );
+        priceText(last.high);
 
       cLow.textContent =
-        priceText(
-          last.low
-        );
+        priceText(last.low);
 
       cClose.textContent =
-        priceText(
-          last.close
-        );
+        priceText(last.close);
 
       cVolume.textContent =
-        volumeText(
-          last.volume
-        );
+        volumeText(last.volume);
     }
 
     function draw() {
@@ -3141,13 +2521,9 @@ function chartHtml(
       );
 
       const data =
-        candles.slice(
-          -90
-        );
+        candles.slice(-90);
 
-      if (
-        !data.length
-      ) {
+      if (!data.length) {
         return;
       }
 
@@ -3165,10 +2541,7 @@ function chartHtml(
           )
         );
 
-      if (
-        max === min
-      ) {
-
+      if (max === min) {
         max += 1;
         min -= 1;
       }
@@ -3189,7 +2562,6 @@ function chartHtml(
         padBottom;
 
       function y(v) {
-
         return (
           padTop +
           (
@@ -3201,7 +2573,6 @@ function chartHtml(
       }
 
       function x(i) {
-
         return (
           padLeft +
           (
@@ -3309,8 +2680,7 @@ function chartHtml(
           y(c.low);
 
         const up =
-          c.close >=
-          c.open;
+          c.close >= c.open;
 
         ctx.beginPath();
 
@@ -3329,8 +2699,7 @@ function chartHtml(
             ? "#22c55e"
             : "#ef4444";
 
-        ctx.lineWidth =
-          1;
+        ctx.lineWidth = 1;
 
         ctx.stroke();
 
@@ -3364,9 +2733,7 @@ function chartHtml(
       }
 
       const last =
-        data[
-          data.length - 1
-        ];
+        data[data.length - 1];
 
       const lastY =
         y(last.close);
@@ -3415,9 +2782,7 @@ function chartHtml(
         "center";
 
       ctx.fillText(
-        priceText(
-          last.close
-        ),
+        priceText(last.close),
         width - 31,
         lastY
       );
@@ -3450,25 +2815,32 @@ function chartHtml(
             data[i].time
           );
 
-        const isDaily =
-          interval === "D";
+        let label;
 
-        const label =
-          isDaily
-            ? d.toLocaleDateString(
-                [],
-                {
-                  month: "2-digit",
-                  day: "2-digit"
-                }
-              )
-            : d.toLocaleTimeString(
-                [],
-                {
-                  hour: "2-digit",
-                  minute: "2-digit"
-                }
-              );
+        if (
+          interval === "D"
+        ) {
+
+          label =
+            d.toLocaleDateString(
+              [],
+              {
+                month: "2-digit",
+                day: "2-digit"
+              }
+            );
+
+        } else {
+
+          label =
+            d.toLocaleTimeString(
+              [],
+              {
+                hour: "2-digit",
+                minute: "2-digit"
+              }
+            );
+        }
 
         ctx.fillText(
           label,
@@ -3480,9 +2852,7 @@ function chartHtml(
 
     async function loadChart() {
 
-      if (
-        destroyed
-      ) {
+      if (destroyed) {
         return;
       }
 
@@ -3495,35 +2865,25 @@ function chartHtml(
         const url =
           "/crypto-chart-data" +
           "?symbol=" +
-          encodeURIComponent(
-            SYMBOL
-          ) +
+          encodeURIComponent(SYMBOL) +
           "&category=" +
-          encodeURIComponent(
-            CATEGORY
-          ) +
+          encodeURIComponent(CATEGORY) +
           "&interval=" +
-          encodeURIComponent(
-            interval
-          ) +
+          encodeURIComponent(interval) +
           "&limit=120";
 
         const response =
           await fetch(
             url,
             {
-              cache:
-                "no-store"
+              cache: "no-store"
             }
           );
 
         const data =
           await response.json();
 
-        if (
-          !data.ok
-        ) {
-
+        if (!data.ok) {
           throw new Error(
             data.error ||
             "Chart data error"
@@ -3546,15 +2906,11 @@ function chartHtml(
 
         draw();
 
-        setStatus(
-          "Live"
-        );
+        setStatus("Live");
 
       } catch (error) {
 
-        console.error(
-          error
-        );
+        console.error(error);
 
         setStatus(
           "Connection error"
@@ -3564,9 +2920,7 @@ function chartHtml(
 
     function start() {
 
-      clearInterval(
-        timer
-      );
+      clearInterval(timer);
 
       loadChart();
 
@@ -3623,9 +2977,7 @@ function chartHtml(
 
         destroyed = true;
 
-        clearInterval(
-          timer
-        );
+        clearInterval(timer);
 
         const box =
           document.querySelector(
@@ -3657,42 +3009,31 @@ function chartHtml(
    ANALYSIS HTML
 ========================================================= */
 
-function analysisHtml(
-  data
-) {
+function analysisHtml(data) {
 
-  if (
-    !data.ok
-  ) {
+  if (!data.ok) {
 
     return `
       <div class="error">
-        ❌ ${htmlEscape(
-          data.error
-        )}
+        ❌ ${htmlEscape(data.error)}
       </div>
     `;
   }
 
   const styles =
     data.styles
-      .map(
-        s => `
+      .map(s => `
 
         <div class="style">
 
           <div class="style-top">
 
             <b>
-              ${htmlEscape(
-                s.name
-              )}
+              ${htmlEscape(s.name)}
             </b>
 
             <span>
-              ${htmlEscape(
-                s.view
-              )}
+              ${htmlEscape(s.view)}
             </span>
 
           </div>
@@ -3712,11 +3053,10 @@ function analysisHtml(
           <ul>
 
             ${s.reasons
-              .map(
-                r =>
-                  `<li>
-                    ${htmlEscape(r)}
-                  </li>`
+              .map(r =>
+                `<li>
+                  ${htmlEscape(r)}
+                </li>`
               )
               .join("")}
 
@@ -3724,13 +3064,11 @@ function analysisHtml(
 
         </div>
 
-      `
-      )
+      `)
       .join("");
 
   const supports =
-    data.supportResistance
-      .supports
+    data.supportResistance.supports
       .map(
         x =>
           formatPrice(
@@ -3741,8 +3079,7 @@ function analysisHtml(
     "No confirmed level";
 
   const resistances =
-    data.supportResistance
-      .resistances
+    data.supportResistance.resistances
       .map(
         x =>
           formatPrice(
@@ -3761,106 +3098,55 @@ function analysisHtml(
   const hunt =
     data.liquidity.hunt;
 
-  const timeframeHtml =
-    data.timeframes
-      .map(
-        tf => {
+  const timeframeRows =
+    data.timeframeSummary.rows
+      .map(tf => `
 
-          const t =
-            tf.trend;
+        <div class="tf-card">
 
-          if (
-            !t
-          ) {
+          <div class="tf-card-head">
 
-            return `
-              <div class="tf-card unavailable">
+            <b>
+              ${htmlEscape(tf.label)}
+            </b>
 
-                <small>
-                  ${htmlEscape(
-                    tf.key
-                  )}
-                </small>
+            <span class="${
+              tf.direction === "BULLISH"
+                ? "bull"
+                : tf.direction === "BEARISH"
+                  ? "bear"
+                  : "neutral"
+            }">
+              ${htmlEscape(tf.direction)}
+            </span>
 
-                <b>
-                  N/A
-                </b>
+          </div>
 
-                <span>
-                  Data unavailable
-                </span>
+          <div class="tf-score">
 
-              </div>
-            `;
-          }
+            ${
+              tf.score !== null
+                ? `${tf.score}/100`
+                : "N/A"
+            }
 
-          const cls =
-            t.direction
-              .toLowerCase();
+          </div>
 
-          return `
-            <div class="tf-card ${cls}">
+          <div class="tf-mini">
 
-              <div class="tf-card-top">
+            ${
+              tf.price !== undefined
+                ? "Price: " +
+                  formatPrice(tf.price)
+                : "Data unavailable"
+            }
 
-                <b>
-                  ${htmlEscape(
-                    tf.key
-                  )}
-                </b>
+          </div>
 
-                <span>
-                  ${htmlEscape(
-                    t.direction
-                  )}
-                </span>
+        </div>
 
-              </div>
-
-              <strong>
-                ${round(
-                  t.score,
-                  1
-                )}/100
-              </strong>
-
-              <small>
-                Price:
-                ${formatPrice(
-                  t.price
-                )}
-              </small>
-
-              <small>
-                MA20:
-                ${
-                  t.ma20 !== null
-                    ? formatPrice(
-                        t.ma20
-                      )
-                    : "N/A"
-                }
-              </small>
-
-              <small>
-                MA50:
-                ${
-                  t.ma50 !== null
-                    ? formatPrice(
-                        t.ma50
-                      )
-                    : "N/A"
-                }
-              </small>
-
-            </div>
-          `;
-        }
-      )
+      `)
       .join("");
-
-  const alignment =
-    data.multiTimeframe;
 
   return `
 
@@ -3878,8 +3164,7 @@ function analysisHtml(
 />
 
 <title>
-Global Pulse -
-${htmlEscape(data.symbol)}
+Global Pulse - ${htmlEscape(data.symbol)}
 </title>
 
 <style>
@@ -3983,8 +3268,7 @@ body{
 
   color:#22c55e;
 
-  border:
-    1px solid
+  border:1px solid
     rgba(34,197,94,.4);
 
 }
@@ -3993,8 +3277,7 @@ body{
 
   color:#ef4444;
 
-  border:
-    1px solid
+  border:1px solid
     rgba(239,68,68,.4);
 
 }
@@ -4003,8 +3286,7 @@ body{
 
   color:#f59e0b;
 
-  border:
-    1px solid
+  border:1px solid
     rgba(245,158,11,.4);
 
 }
@@ -4056,6 +3338,135 @@ body{
 .card b{
 
   font-size:18px;
+
+}
+
+/* =======================================================
+   TIMEFRAME GRID
+======================================================= */
+
+.timeframe-section{
+
+  margin-top:25px;
+
+}
+
+.timeframe-title{
+
+  display:flex;
+
+  justify-content:space-between;
+
+  align-items:center;
+
+  gap:10px;
+
+  margin-bottom:12px;
+
+}
+
+.timeframe-title h3{
+
+  margin:0;
+
+}
+
+.timeframe-overall{
+
+  background:#0f172a;
+
+  border:1px solid
+    rgba(255,255,255,.08);
+
+  border-radius:10px;
+
+  padding:8px 12px;
+
+  font-weight:800;
+
+}
+
+.timeframe-grid{
+
+  display:grid;
+
+  grid-template-columns:
+    repeat(
+      auto-fit,
+      minmax(
+        150px,
+        1fr
+      )
+    );
+
+  gap:9px;
+
+}
+
+.tf-card{
+
+  background:
+    rgba(15,23,42,.86);
+
+  border:
+    1px solid
+    rgba(255,255,255,.08);
+
+  border-radius:14px;
+
+  padding:13px;
+
+}
+
+.tf-card-head{
+
+  display:flex;
+
+  justify-content:space-between;
+
+  gap:5px;
+
+  align-items:center;
+
+  margin-bottom:10px;
+
+}
+
+.tf-card-head span{
+
+  font-size:11px;
+
+  font-weight:800;
+
+}
+
+.bull{
+  color:#22c55e;
+}
+
+.bear{
+  color:#ef4444;
+}
+
+.neutral{
+  color:#f59e0b;
+}
+
+.tf-score{
+
+  font-size:21px;
+
+  font-weight:900;
+
+  margin-bottom:7px;
+
+}
+
+.tf-mini{
+
+  color:#64748b;
+
+  font-size:11px;
 
 }
 
@@ -4255,190 +3666,6 @@ h3{
 }
 
 /* =======================================================
-   ALL TIMEFRAMES
-======================================================= */
-
-.timeframe-grid{
-
-  display:grid;
-
-  grid-template-columns:
-    repeat(
-      auto-fit,
-      minmax(
-        145px,
-        1fr
-      )
-    );
-
-  gap:10px;
-
-}
-
-.tf-card{
-
-  background:
-    rgba(15,23,42,.9);
-
-  border:
-    1px solid
-    rgba(255,255,255,.08);
-
-  border-radius:14px;
-
-  padding:13px;
-
-  min-height:145px;
-
-}
-
-.tf-card-top{
-
-  display:flex;
-
-  justify-content:space-between;
-
-  align-items:center;
-
-  gap:5px;
-
-  margin-bottom:12px;
-
-}
-
-.tf-card-top b{
-
-  font-size:16px;
-
-}
-
-.tf-card-top span{
-
-  font-size:11px;
-
-  font-weight:800;
-
-}
-
-.tf-card.bullish{
-
-  border-color:
-    rgba(34,197,94,.35);
-
-}
-
-.tf-card.bullish
-.tf-card-top span{
-
-  color:#22c55e;
-
-}
-
-.tf-card.bearish{
-
-  border-color:
-    rgba(239,68,68,.35);
-
-}
-
-.tf-card.bearish
-.tf-card-top span{
-
-  color:#ef4444;
-
-}
-
-.tf-card.neutral{
-
-  border-color:
-    rgba(245,158,11,.35);
-
-}
-
-.tf-card.neutral
-.tf-card-top span{
-
-  color:#f59e0b;
-
-}
-
-.tf-card.unavailable{
-
-  opacity:.55;
-
-}
-
-.tf-card strong{
-
-  display:block;
-
-  font-size:18px;
-
-  margin-bottom:10px;
-
-}
-
-.tf-card small{
-
-  display:block;
-
-  color:#94a3b8;
-
-  margin-top:5px;
-
-  font-size:11px;
-
-}
-
-.mtf-summary{
-
-  display:grid;
-
-  grid-template-columns:
-    repeat(
-      auto-fit,
-      minmax(
-        140px,
-        1fr
-      )
-    );
-
-  gap:10px;
-
-  margin-top:12px;
-
-}
-
-.mtf-box{
-
-  background:
-    rgba(15,23,42,.85);
-
-  border-radius:12px;
-
-  padding:13px;
-
-  text-align:center;
-
-}
-
-.mtf-box small{
-
-  display:block;
-
-  color:#94a3b8;
-
-  margin-bottom:6px;
-
-}
-
-.mtf-box b{
-
-  font-size:18px;
-
-}
-
-/* =======================================================
    LIVE CHART
 ======================================================= */
 
@@ -4528,8 +3755,7 @@ h3{
 .tf,
 .chart-close{
 
-  border:
-    1px solid
+  border:1px solid
     rgba(255,255,255,.1);
 
   background:#111827;
@@ -4538,7 +3764,7 @@ h3{
 
   border-radius:10px;
 
-  padding:8px 12px;
+  padding:8px 11px;
 
   cursor:pointer;
 
@@ -4642,8 +3868,7 @@ h3{
 
   color:#94a3b8;
 
-  background:
-    rgba(7,11,18,.75);
+  background:rgba(7,11,18,.75);
 
   font-size:14px;
 
@@ -4734,11 +3959,6 @@ h3{
     height:300px;
   }
 
-  .tf{
-    flex:1;
-    min-width:55px;
-  }
-
 }
 
 </style>
@@ -4758,16 +3978,12 @@ h3{
       </small>
 
       <h2>
-        🪙 ${htmlEscape(
-          data.symbol
-        )}
+        🪙 ${htmlEscape(data.symbol)}
       </h2>
 
       <small>
         🏦 Market:
-        ${htmlEscape(
-          data.market.type
-        )}
+        ${htmlEscape(data.market.type)}
       </small>
 
     </div>
@@ -4795,9 +4011,7 @@ h3{
       </small>
 
       <b>
-        ${formatPrice(
-          data.price
-        )}
+        ${formatPrice(data.price)}
       </b>
 
     </div>
@@ -4821,14 +4035,7 @@ h3{
       </small>
 
       <b>
-        ${
-          data.trend
-            .fifteenMinute
-            ? data.trend
-                .fifteenMinute
-                .direction
-            : "N/A"
-        }
+        ${data.trend.fifteenMinute.direction}
       </b>
 
     </div>
@@ -4852,42 +4059,46 @@ h3{
     <div class="card">
 
       <small>
-        1D TREND
+        RSI 1M
       </small>
 
       <b>
-        ${
-          data.trend.oneDay
-            ? data.trend.oneDay.direction
-            : "N/A"
-        }
-      </b>
-
-    </div>
-
-    <div class="card">
-
-      <small>
-        RSI
-      </small>
-
-      <b>
-        ${
-          data.indicators.rsi !== null
-            ? round(
-                data.indicators.rsi,
-                2
-              )
-            : "N/A"
-        }
+        ${round(
+          data.indicators.rsi,
+          2
+        )}
       </b>
 
     </div>
 
   </div>
 
+  <section class="timeframe-section">
+
+    <div class="timeframe-title">
+
+      <h3>
+        🕐 همه تایم‌فریم‌ها
+      </h3>
+
+      <div class="timeframe-overall">
+        میانگین:
+        ${data.timeframeSummary.overall}/100
+      </div>
+
+    </div>
+
+    <div class="timeframe-grid">
+
+      ${timeframeRows}
+
+    </div>
+
+  </section>
+
   <div style="
     margin-bottom:20px;
+    margin-top:20px;
     display:flex;
     gap:10px;
     flex-wrap:wrap;
@@ -4907,90 +4118,12 @@ h3{
         font-size:14px;
       "
     >
-      📈 چارت زنده — همه تایم‌فریم‌ها
+      📈 چارت زنده همه تایم‌فریم‌ها
     </button>
 
   </div>
 
   <div id="live-chart-container"></div>
-
-  <h3>
-    🕐 All Timeframes — 1M تا 1D
-  </h3>
-
-  <div class="timeframe-grid">
-
-    ${timeframeHtml}
-
-  </div>
-
-  <h3>
-    🌐 Multi-Timeframe Alignment
-  </h3>
-
-  <div class="mtf-summary">
-
-    <div class="mtf-box">
-
-      <small>
-        Overall Bias
-      </small>
-
-      <b>
-        ${alignment.direction}
-      </b>
-
-    </div>
-
-    <div class="mtf-box">
-
-      <small>
-        Bullish
-      </small>
-
-      <b>
-        ${alignment.bullish}
-      </b>
-
-    </div>
-
-    <div class="mtf-box">
-
-      <small>
-        Bearish
-      </small>
-
-      <b>
-        ${alignment.bearish}
-      </b>
-
-    </div>
-
-    <div class="mtf-box">
-
-      <small>
-        Neutral
-      </small>
-
-      <b>
-        ${alignment.neutral}
-      </b>
-
-    </div>
-
-    <div class="mtf-box">
-
-      <small>
-        Agreement
-      </small>
-
-      <b>
-        ${alignment.agreement}%
-      </b>
-
-    </div>
-
-  </div>
 
   <h3>
     📊 Trading Styles
@@ -5011,9 +4144,7 @@ h3{
       </b>
 
       <p>
-        ${htmlEscape(
-          supports
-        )}
+        ${htmlEscape(supports)}
       </p>
 
     </div>
@@ -5025,9 +4156,7 @@ h3{
       </b>
 
       <p>
-        ${htmlEscape(
-          resistances
-        )}
+        ${htmlEscape(resistances)}
       </p>
 
     </div>
@@ -5041,15 +4170,11 @@ h3{
   <div class="data-box">
 
     <b>
-      ${htmlEscape(
-        hunt.type
-      )}
+      ${htmlEscape(hunt.type)}
     </b>
 
     <p>
-      ${htmlEscape(
-        hunt.reason
-      )}
+      ${htmlEscape(hunt.reason)}
     </p>
 
     ${
@@ -5057,9 +4182,7 @@ h3{
         ? `
           <small>
             Level:
-            ${formatPrice(
-              hunt.level
-            )}
+            ${formatPrice(hunt.level)}
           </small>
         `
         : ""
@@ -5076,40 +4199,28 @@ h3{
     <div>
       Buy Volume
       <b>
-        ${round(
-          f.buyVolume,
-          4
-        )}
+        ${round(f.buyVolume,4)}
       </b>
     </div>
 
     <div>
       Sell Volume
       <b>
-        ${round(
-          f.sellVolume,
-          4
-        )}
+        ${round(f.sellVolume,4)}
       </b>
     </div>
 
     <div>
       Delta
       <b>
-        ${round(
-          f.delta,
-          4
-        )}
+        ${round(f.delta,4)}
       </b>
     </div>
 
     <div>
       Delta %
       <b>
-        ${round(
-          f.deltaPercent,
-          2
-        )}%
+        ${round(f.deltaPercent,2)}%
       </b>
     </div>
 
@@ -5149,38 +4260,28 @@ h3{
     <div>
       Buy Share
       <b>
-        ${round(
-          ob.buyShare,
-          2
-        )}%
+        ${round(ob.buyShare,2)}%
       </b>
     </div>
 
     <div>
       Sell Share
       <b>
-        ${round(
-          ob.sellShare,
-          2
-        )}%
+        ${round(ob.sellShare,2)}%
       </b>
     </div>
 
     <div>
       Best Bid
       <b>
-        ${formatPrice(
-          ob.bestBid
-        )}
+        ${formatPrice(ob.bestBid)}
       </b>
     </div>
 
     <div>
       Best Ask
       <b>
-        ${formatPrice(
-          ob.bestAsk
-        )}
+        ${formatPrice(ob.bestAsk)}
       </b>
     </div>
 
@@ -5207,8 +4308,7 @@ h3{
             Open Interest
             <b>
               ${
-                data.futures
-                  .openInterest
+                data.futures.openInterest
                   ?? "N/A"
               }
             </b>
@@ -5218,14 +4318,13 @@ h3{
             OI Value
             <b>
               ${
-                data.futures
-                  .openInterestValue
-                    ? "$" +
-                      Math.round(
-                        data.futures
-                          .openInterestValue
-                      ).toLocaleString()
-                    : "N/A"
+                data.futures.openInterestValue
+                  ? "$" +
+                    Math.round(
+                      data.futures
+                        .openInterestValue
+                    ).toLocaleString()
+                  : "N/A"
               }
             </b>
           </div>
@@ -5234,10 +4333,8 @@ h3{
             Funding
             <b>
               ${
-                data.futures
-                  .fundingRate !== null
-                  ? data.futures
-                      .fundingRate
+                data.futures.fundingRate !== null
+                  ? data.futures.fundingRate
                   : "N/A"
               }
             </b>
@@ -5288,7 +4385,7 @@ document
   )
   .addEventListener(
     "click",
-    async function(){
+    function(){
 
       const container =
         document.getElementById(
@@ -5308,9 +4405,7 @@ document
       }
 
       container.innerHTML =
-        ${JSON.stringify(
-          chartHtml(data)
-        )};
+        ${JSON.stringify(chartHtml(data))};
 
       container.scrollIntoView({
         behavior:"smooth",
@@ -5404,12 +4499,9 @@ export default {
           allTimeframes:
             TIMEFRAMES.map(
               x => ({
-                key:
-                  x.key,
-                interval:
-                  x.interval,
-                label:
-                  x.label
+                key: x.key,
+                api: x.api,
+                label: x.label
               })
             ),
 
@@ -5491,7 +4583,7 @@ export default {
             )
           );
 
-        const requestedInterval =
+        const interval =
           url.searchParams.get(
             "interval"
           ) || "1";
@@ -5535,9 +4627,7 @@ export default {
             input
           );
 
-        if (
-          !found.found
-        ) {
+        if (!found.found) {
 
           return json({
 
@@ -5552,59 +4642,54 @@ export default {
         let category =
           found.category;
 
-        /*
-         * فقط زمانی دسته‌بندی
-         * Frontend را قبول می‌کنیم
-         * که با بازار واقعی Symbol
-         * یکی باشد.
-         */
-
         if (
-          requestedCategory ===
-            "spot" &&
-          found.category ===
-            "spot"
+          requestedCategory === "spot" &&
+          found.category === "spot"
         ) {
 
-          category =
-            "spot";
+          category = "spot";
         }
 
         if (
-          requestedCategory ===
-            "linear" &&
-          found.category ===
-            "linear"
+          requestedCategory === "linear" &&
+          found.category === "linear"
         ) {
 
-          category =
-            "linear";
+          category = "linear";
         }
+
+        const allowedIntervals =
+          TIMEFRAMES.map(
+            x => x.api
+          );
 
         const safeInterval =
-          ALLOWED_INTERVALS.includes(
-            String(
-              requestedInterval
-            )
+          allowedIntervals.includes(
+            String(interval)
           )
-            ? String(
-                requestedInterval
-              )
+            ? String(interval)
             : "1";
+
+        const safeLimit =
+          Math.max(
+            20,
+            Math.min(
+              1000,
+              limit
+            )
+          );
 
         const candles =
           await getLiveChartData(
             category,
             found.symbol,
             safeInterval,
-            limit
+            safeLimit
           );
 
-        const timeframe =
-          TIMEFRAMES.find(
-            x =>
-              x.interval ===
-              safeInterval
+        const tf =
+          getTimeframe(
+            safeInterval
           );
 
         return json({
@@ -5623,14 +4708,7 @@ export default {
             safeInterval,
 
           timeframe:
-            timeframe
-              ? {
-                  key:
-                    timeframe.key,
-                  label:
-                    timeframe.label
-                }
-              : null,
+            tf,
 
           candles,
 
@@ -5648,8 +4726,7 @@ export default {
 
       if (
         request.method === "GET" &&
-        url.pathname ===
-          "/crypto"
+        url.pathname === "/crypto"
       ) {
 
         const input =
@@ -5702,7 +4779,6 @@ export default {
             headers: {
               "content-type":
                 "text/html; charset=utf-8",
-
               "cache-control":
                 "no-store"
             }
