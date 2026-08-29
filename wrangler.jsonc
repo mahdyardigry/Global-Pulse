@@ -1,11 +1,7 @@
 {
-  "name": "global-pulse",
+  "name": "telegram-auto-channel",
   "main": "worker.js",
   "compatibility_date": "2026-08-29",
-
-  "vars": {
-    "PROJECT_NAME": "Global Pulse"
-  },
 
   "triggers": {
     "crons": [
