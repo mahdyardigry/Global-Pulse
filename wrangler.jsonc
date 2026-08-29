@@ -1,13 +1,17 @@
 {
-  "name": "telegram-auto-channel",
+  "$schema": "node_modules/wrangler/config-schema.json",
+
+  "name": "global-pulse",
+
   "main": "worker.js",
+
   "compatibility_date": "2026-08-29",
-  "vars": {
-    "TELEGRAM_CHANNEL_ID": "-1003261070240"
-  },
+
+  "workers_dev": true,
+
   "triggers": {
     "crons": [
-      "0 * * * *"
+      "*/15 * * * *"
     ]
   }
 }
