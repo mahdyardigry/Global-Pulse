@@ -1,7 +1,12 @@
+
 {
   "name": "telegram-auto-channel",
   "main": "worker.js",
   "compatibility_date": "2026-08-29",
+
+  "vars": {
+    "TELEGRAM_CHANNEL_ID": "-1003261070240"
+  },
 
   "triggers": {
     "crons": [
