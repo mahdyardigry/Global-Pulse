@@ -1,15 +1,40 @@
 /* =========================================================
-   GLOBAL PULSE V9
+   GLOBAL PULSE V10
    Global News + Iran News + Country Trends + Shopping
    + Interactive Crypto Radar
    + Persian / English
+   + Crypto Timeframe Selector
    + Automatic Telegram Publishing
+   + Iran News ONLY from Iranian Sources
    ========================================================= */
 
-const VERSION = "GLOBAL-PULSE-V9";
+const VERSION = "GLOBAL-PULSE-V10";
 const BYBIT = "https://api.bybit.com";
 
 const TF_LIST = ["1","3","5","15","30","60","240","D"];
+
+const TF_NAMES = {
+  fa:{
+    "1":"۱ دقیقه",
+    "3":"۳ دقیقه",
+    "5":"۵ دقیقه",
+    "15":"۱۵ دقیقه",
+    "30":"۳۰ دقیقه",
+    "60":"۱ ساعت",
+    "240":"۴ ساعت",
+    "D":"روزانه"
+  },
+  en:{
+    "1":"1 Minute",
+    "3":"3 Minutes",
+    "5":"5 Minutes",
+    "15":"15 Minutes",
+    "30":"30 Minutes",
+    "60":"1 Hour",
+    "240":"4 Hours",
+    "D":"Daily"
+  }
+};
 
 const COUNTRIES = [
   {code:"US",name:"United States",fa:"آمریکا"},
@@ -32,136 +57,235 @@ const COUNTRIES = [
    HELPERS
    ========================================================= */
 
-const sleep = ms => new Promise(r=>setTimeout(r,ms));
+const sleep = ms =>
+  new Promise(resolve => setTimeout(resolve,ms));
 
 function json(data,status=200){
-  return new Response(JSON.stringify(data,null,2),{
-    status,
-    headers:{
-      "content-type":"application/json; charset=UTF-8",
-      "cache-control":"no-store"
+
+  return new Response(
+    JSON.stringify(data,null,2),
+    {
+      status,
+      headers:{
+        "content-type":"application/json; charset=UTF-8",
+        "cache-control":"no-store"
+      }
     }
-  });
+  );
 }
 
 function cleanSymbol(s){
+
   return String(s||"")
     .toUpperCase()
     .replace(/[^A-Z0-9]/g,"");
 }
 
 function num(v,fallback=0){
+
   const n=Number(v);
-  return Number.isFinite(n)?n:fallback;
+
+  return Number.isFinite(n)
+    ?n
+    :fallback;
 }
 
 function avg(a){
+
   if(!a.length)return 0;
-  return a.reduce((x,y)=>x+y,0)/a.length;
+
+  return a.reduce(
+    (x,y)=>x+y,
+    0
+  )/a.length;
 }
 
 function sma(v,p){
+
   if(v.length<p)return null;
-  return avg(v.slice(-p));
+
+  return avg(
+    v.slice(-p)
+  );
 }
 
 function ema(v,p){
+
   if(v.length<p)return null;
 
   const k=2/(p+1);
-  let e=avg(v.slice(0,p));
 
-  for(let i=p;i<v.length;i++){
-    e=v[i]*k+e*(1-k);
+  let e=avg(
+    v.slice(0,p)
+  );
+
+  for(
+    let i=p;
+    i<v.length;
+    i++
+  ){
+
+    e=
+      v[i]*k+
+      e*(1-k);
   }
 
   return e;
 }
 
 function stddev(v,p){
+
   if(v.length<p)return null;
 
   const a=v.slice(-p);
+
   const m=avg(a);
 
   return Math.sqrt(
-    avg(a.map(x=>(x-m)**2))
+    avg(
+      a.map(
+        x=>(x-m)**2
+      )
+    )
   );
 }
 
 function rsi(v,p=14){
+
   if(v.length<p+1)return null;
 
   let gain=0;
   let loss=0;
 
-  for(let i=1;i<=p;i++){
-    const d=v[i]-v[i-1];
+  for(
+    let i=1;
+    i<=p;
+    i++
+  ){
 
-    if(d>=0)gain+=d;
-    else loss-=d;
+    const d=
+      v[i]-v[i-1];
+
+    if(d>=0)
+      gain+=d;
+    else
+      loss-=d;
   }
 
   let ag=gain/p;
   let al=loss/p;
 
-  for(let i=p+1;i<v.length;i++){
+  for(
+    let i=p+1;
+    i<v.length;
+    i++
+  ){
 
-    const d=v[i]-v[i-1];
+    const d=
+      v[i]-v[i-1];
 
-    const g=Math.max(d,0);
-    const l=Math.max(-d,0);
+    const g=
+      Math.max(d,0);
 
-    ag=((ag*(p-1))+g)/p;
-    al=((al*(p-1))+l)/p;
+    const l=
+      Math.max(-d,0);
+
+    ag=
+      ((ag*(p-1))+g)/p;
+
+    al=
+      ((al*(p-1))+l)/p;
   }
 
-  if(al===0)return 100;
+  if(al===0)
+    return 100;
 
-  const rs=ag/al;
+  const rs=
+    ag/al;
 
-  return 100-(100/(1+rs));
+  return 100-
+    (100/(1+rs));
 }
 
 function macd(v){
 
-  if(v.length<35)return null;
+  if(v.length<35)
+    return null;
 
-  const fast=ema(v,12);
-  const slow=ema(v,26);
+  const fast=
+    ema(v,12);
 
-  if(fast==null||slow==null)return null;
+  const slow=
+    ema(v,26);
 
-  const line=fast-slow;
+  if(
+    fast==null||
+    slow==null
+  )
+    return null;
+
+  const line=
+    fast-slow;
 
   const series=[];
 
-  for(let i=26;i<v.length;i++){
+  for(
+    let i=26;
+    i<v.length;
+    i++
+  ){
 
-    const f=ema(v.slice(0,i+1),12);
-    const s=ema(v.slice(0,i+1),26);
+    const f=
+      ema(
+        v.slice(0,i+1),
+        12
+      );
 
-    if(f!=null&&s!=null){
-      series.push(f-s);
+    const s=
+      ema(
+        v.slice(0,i+1),
+        26
+      );
+
+    if(
+      f!=null&&
+      s!=null
+    ){
+
+      series.push(
+        f-s
+      );
     }
   }
 
-  const signal=ema(series,9);
+  const signal=
+    ema(
+      series,
+      9
+    );
 
   return {
     line,
     signal,
-    histogram:signal==null?null:line-signal
+    histogram:
+      signal==null
+        ?null
+        :line-signal
   };
 }
 
 function atr(c,p=14){
 
-  if(c.length<p+1)return null;
+  if(c.length<p+1)
+    return null;
 
   const trs=[];
 
-  for(let i=1;i<c.length;i++){
+  for(
+    let i=1;
+    i<c.length;
+    i++
+  ){
 
     const x=c[i];
     const y=c[i-1];
@@ -169,41 +293,64 @@ function atr(c,p=14){
     trs.push(
       Math.max(
         x.high-x.low,
-        Math.abs(x.high-y.close),
-        Math.abs(x.low-y.close)
+        Math.abs(
+          x.high-y.close
+        ),
+        Math.abs(
+          x.low-y.close
+        )
       )
     );
   }
 
-  return avg(trs.slice(-p));
+  return avg(
+    trs.slice(-p)
+  );
 }
 
-function bollinger(v,p=20,m=2){
+function bollinger(
+  v,
+  p=20,
+  m=2
+){
 
-  if(v.length<p)return null;
+  if(v.length<p)
+    return null;
 
-  const middle=sma(v,p);
-  const sd=stddev(v,p);
+  const middle=
+    sma(v,p);
+
+  const sd=
+    stddev(v,p);
 
   return {
     middle,
-    upper:middle+m*sd,
-    lower:middle-m*sd,
-    width:middle?((2*m*sd)/middle)*100:0
+    upper:
+      middle+m*sd,
+    lower:
+      middle-m*sd,
+    width:
+      middle
+        ?((2*m*sd)/middle)*100
+        :0
   };
 }
 
 function parseKlines(rows){
 
-  return rows.map(x=>({
-    time:num(x[0]),
-    open:num(x[1]),
-    high:num(x[2]),
-    low:num(x[3]),
-    close:num(x[4]),
-    volume:num(x[5]),
-    turnover:num(x[6])
-  })).sort((a,b)=>a.time-b.time);
+  return rows
+    .map(x=>({
+      time:num(x[0]),
+      open:num(x[1]),
+      high:num(x[2]),
+      low:num(x[3]),
+      close:num(x[4]),
+      volume:num(x[5]),
+      turnover:num(x[6])
+    }))
+    .sort(
+      (a,b)=>a.time-b.time
+    );
 }
 
 /* =========================================================
@@ -212,50 +359,84 @@ function parseKlines(rows){
 
 async function bybit(path){
 
-  const r=await fetch(BYBIT+path,{
-    headers:{
-      "user-agent":"Global-Pulse/9.0"
-    }
-  });
+  const r=
+    await fetch(
+      BYBIT+path,
+      {
+        headers:{
+          "user-agent":
+            "Global-Pulse/10.0"
+        }
+      }
+    );
 
   if(!r.ok){
-    throw new Error(`Bybit HTTP ${r.status}`);
+
+    throw new Error(
+      `Bybit HTTP ${r.status}`
+    );
   }
 
-  const j=await r.json();
+  const j=
+    await r.json();
 
   if(j.retCode!==0){
-    throw new Error(j.retMsg||"Bybit error");
+
+    throw new Error(
+      j.retMsg||
+      "Bybit error"
+    );
   }
 
   return j.result;
 }
 
-async function getKlines(category,symbol,interval,limit=200){
+async function getKlines(
+  category,
+  symbol,
+  interval,
+  limit=200
+){
 
-  const r=await bybit(
-    `/v5/market/kline?category=${category}`+
-    `&symbol=${symbol}`+
-    `&interval=${interval}`+
-    `&limit=${limit}`
+  const r=
+    await bybit(
+      `/v5/market/kline?category=${category}`+
+      `&symbol=${symbol}`+
+      `&interval=${interval}`+
+      `&limit=${limit}`
+    );
+
+  return parseKlines(
+    r.list||[]
   );
-
-  return parseKlines(r.list||[]);
 }
 
 async function findMarket(symbol){
 
-  symbol=cleanSymbol(symbol);
+  symbol=
+    cleanSymbol(symbol);
 
-  for(const category of ["linear","spot"]){
+  if(!symbol)
+    return null;
+
+  for(
+    const category of
+    ["linear","spot"]
+  ){
 
     try{
 
-      const r=await bybit(
-        `/v5/market/instruments-info?category=${category}&symbol=${symbol}`
-      );
+      const r=
+        await bybit(
+          `/v5/market/instruments-info`+
+          `?category=${category}`+
+          `&symbol=${symbol}`
+        );
 
-      if(r.list?.length){
+      if(
+        r.list?.length
+      ){
+
         return category;
       }
 
@@ -266,48 +447,175 @@ async function findMarket(symbol){
 }
 
 /* =========================================================
+   CRYPTO SYMBOL RESOLUTION
+   ========================================================= */
+
+function isCryptoSymbol(text){
+
+  const s=
+    cleanSymbol(text);
+
+  if(!s)
+    return false;
+
+  return /^[A-Z0-9]{2,30}$/.test(s);
+}
+
+function extractCryptoSymbol(text){
+
+  let s=
+    String(text||"")
+      .trim();
+
+  if(!s)
+    return null;
+
+  s=
+    s.replace(
+      /^\/crypto(@[A-Za-z0-9_]+)?\s*/i,
+      ""
+    );
+
+  s=
+    s.replace(
+      /^\/analyze(@[A-Za-z0-9_]+)?\s*/i,
+      ""
+    );
+
+  const parts=
+    s.split(/\s+/);
+
+  s=
+    parts[0]||"";
+
+  s=
+    cleanSymbol(s);
+
+  return isCryptoSymbol(s)
+    ?s
+    :null;
+}
+
+async function resolveCryptoSymbol(
+  input
+){
+
+  const original=
+    cleanSymbol(input);
+
+  if(!original){
+
+    throw new Error(
+      "Symbol is required"
+    );
+  }
+
+  /* مستقیم */
+
+  const direct=
+    await findMarket(
+      original
+    );
+
+  if(direct)
+    return original;
+
+  /* USDT */
+
+  if(
+    !original.endsWith("USDT")
+  ){
+
+    const usdt=
+      original+
+      "USDT";
+
+    const market=
+      await findMarket(
+        usdt
+      );
+
+    if(market)
+      return usdt;
+  }
+
+  return original;
+}
+
+/* =========================================================
    MARKET ANALYSIS
    ========================================================= */
 
 function structure(c){
 
-  if(c.length<30)return "UNKNOWN";
+  if(c.length<30)
+    return "UNKNOWN";
 
-  const r=c.slice(-20);
+  const r=
+    c.slice(-20);
 
-  const high=Math.max(...r.map(x=>x.high));
-  const low=Math.min(...r.map(x=>x.low));
+  const high=
+    Math.max(
+      ...r.map(
+        x=>x.high
+      )
+    );
 
-  const first=r[0].close;
-  const last=r[r.length-1].close;
+  const low=
+    Math.min(
+      ...r.map(
+        x=>x.low
+      )
+    );
 
-  const range=high-low;
+  const first=
+    r[0].close;
 
-  if(!range)return "RANGE";
+  const last=
+    r[r.length-1].close;
 
-  const move=(last-first)/range;
+  const range=
+    high-low;
 
-  if(move>.35)return "BULLISH_STRUCTURE";
-  if(move<-.35)return "BEARISH_STRUCTURE";
+  if(!range)
+    return "RANGE";
+
+  const move=
+    (last-first)/range;
+
+  if(move>.35)
+    return "BULLISH_STRUCTURE";
+
+  if(move<-.35)
+    return "BEARISH_STRUCTURE";
 
   return "RANGE";
 }
 
 function supportResistance(c){
 
-  const recent=c.slice(-100);
+  const recent=
+    c.slice(-100);
 
-  const supports=recent
-    .map(x=>x.low)
-    .sort((a,b)=>a-b);
+  const supports=
+    recent
+      .map(x=>x.low)
+      .sort(
+        (a,b)=>a-b
+      );
 
-  const resistances=recent
-    .map(x=>x.high)
-    .sort((a,b)=>b-a);
+  const resistances=
+    recent
+      .map(x=>x.high)
+      .sort(
+        (a,b)=>b-a
+      );
 
   return {
-    supports:supports.slice(0,8),
-    resistances:resistances.slice(0,8)
+    supports:
+      supports.slice(0,8),
+    resistances:
+      resistances.slice(0,8)
   };
 }
 
@@ -316,77 +624,151 @@ function vwap(c){
   let pv=0;
   let vol=0;
 
-  for(const x of c.slice(-100)){
+  for(
+    const x of
+    c.slice(-100)
+  ){
 
-    const typical=(x.high+x.low+x.close)/3;
+    const typical=
+      (
+        x.high+
+        x.low+
+        x.close
+      )/3;
 
-    pv+=typical*x.volume;
+    pv+=
+      typical*
+      x.volume;
+
     vol+=x.volume;
   }
 
-  return vol?pv/vol:null;
+  return vol
+    ?pv/vol
+    :null;
 }
 
-function stochastic(c,p=14){
+function stochastic(
+  c,
+  p=14
+){
 
-  if(c.length<p)return null;
+  if(c.length<p)
+    return null;
 
-  const a=c.slice(-p);
+  const a=
+    c.slice(-p);
 
-  const high=Math.max(...a.map(x=>x.high));
-  const low=Math.min(...a.map(x=>x.low));
+  const high=
+    Math.max(
+      ...a.map(
+        x=>x.high
+      )
+    );
 
-  if(high===low)return 50;
+  const low=
+    Math.min(
+      ...a.map(
+        x=>x.low
+      )
+    );
 
-  return ((a[a.length-1].close-low)/(high-low))*100;
+  if(high===low)
+    return 50;
+
+  return (
+    (
+      a.at(-1).close-
+      low
+    )/
+    (high-low)
+  )*100;
 }
 
-function momentum(v,p=10){
+function momentum(
+  v,
+  p=10
+){
 
-  if(v.length<=p)return null;
+  if(v.length<=p)
+    return null;
 
-  const old=v[v.length-1-p];
-  const now=v[v.length-1];
+  const old=
+    v[v.length-1-p];
 
-  return old?((now-old)/old)*100:0;
+  const now=
+    v[v.length-1];
+
+  return old
+    ?((now-old)/old)*100
+    :0;
 }
 
 function divergence(v){
 
-  if(v.length<40)return {
-    type:"NONE",
-    strength:0
-  };
+  if(v.length<40){
 
-  const a=v.slice(-40);
-
-  const first=a.slice(0,20);
-  const second=a.slice(20);
-
-  const p1=avg(first);
-  const p2=avg(second);
-
-  const r1=rsi(first);
-  const r2=rsi(second);
-
-  if(r1==null||r2==null){
     return {
       type:"NONE",
       strength:0
     };
   }
 
-  if(p2<p1&&r2>r1){
+  const a=
+    v.slice(-40);
+
+  const first=
+    a.slice(0,20);
+
+  const second=
+    a.slice(20);
+
+  const p1=
+    avg(first);
+
+  const p2=
+    avg(second);
+
+  const r1=
+    rsi(first);
+
+  const r2=
+    rsi(second);
+
+  if(
+    r1==null||
+    r2==null
+  ){
+
     return {
-      type:"BULLISH_DIVERGENCE",
-      strength:Math.round(r2-r1)
+      type:"NONE",
+      strength:0
     };
   }
 
-  if(p2>p1&&r2<r1){
+  if(
+    p2<p1&&
+    r2>r1
+  ){
+
     return {
-      type:"BEARISH_DIVERGENCE",
-      strength:Math.round(r1-r2)
+      type:
+        "BULLISH_DIVERGENCE",
+      strength:
+        Math.round(r2-r1)
+    };
+  }
+
+  if(
+    p2>p1&&
+    r2<r1
+  ){
+
+    return {
+      type:
+        "BEARISH_DIVERGENCE",
+      strength:
+        Math.round(r1-r2)
     };
   }
 
@@ -397,77 +779,134 @@ function divergence(v){
 }
 
 /* =========================================================
-   TIMEFRAME
+   TIMEFRAME ANALYSIS
    ========================================================= */
 
-async function analyzeTimeframe(category,symbol,tf){
+async function analyzeTimeframe(
+  category,
+  symbol,
+  tf
+){
 
-  const candles=await getKlines(
-    category,
-    symbol,
-    tf,
-    200
-  );
+  const candles=
+    await getKlines(
+      category,
+      symbol,
+      tf,
+      200
+    );
 
   if(candles.length<60){
-    throw new Error(`Insufficient ${tf} data`);
+
+    throw new Error(
+      `Insufficient ${tf} data`
+    );
   }
 
-  const closes=candles.map(x=>x.close);
+  const closes=
+    candles.map(
+      x=>x.close
+    );
 
-  const price=closes.at(-1);
+  const price=
+    closes.at(-1);
 
-  const ma20=sma(closes,20);
-  const ma50=sma(closes,50);
+  const ma20=
+    sma(closes,20);
 
-  const ema20=ema(closes,20);
-  const ema50=ema(closes,50);
+  const ma50=
+    sma(closes,50);
 
-  const r=rsi(closes,14);
-  const m=macd(closes);
-  const a=atr(candles,14);
-  const bb=bollinger(closes);
+  const ema20=
+    ema(closes,20);
 
-  const volNow=candles.at(-1).volume;
+  const ema50=
+    ema(closes,50);
 
-  const volAvg=avg(
-    candles.slice(-21,-1).map(x=>x.volume)
-  );
+  const r=
+    rsi(closes,14);
 
-  const volumeRatio=volAvg?volNow/volAvg:0;
+  const m=
+    macd(closes);
 
-  const sr=supportResistance(candles);
+  const a=
+    atr(candles,14);
 
-  const vw=vwap(candles);
+  const bb=
+    bollinger(closes);
 
-  const stoch=stochastic(candles);
+  const volNow=
+    candles.at(-1).volume;
 
-  const mom=momentum(closes);
+  const volAvg=
+    avg(
+      candles
+        .slice(-21,-1)
+        .map(
+          x=>x.volume
+        )
+    );
 
-  const div=divergence(closes);
+  const volumeRatio=
+    volAvg
+      ?volNow/volAvg
+      :0;
 
-  let trend="NEUTRAL";
+  const sr=
+    supportResistance(
+      candles
+    );
+
+  const vw=
+    vwap(candles);
+
+  const stoch=
+    stochastic(candles);
+
+  const mom=
+    momentum(closes);
+
+  const div=
+    divergence(closes);
+
+  let trend=
+    "NEUTRAL";
 
   let bullish=0;
   let bearish=0;
 
-  if(price>ma20)bullish++;
-  else bearish++;
+  if(price>ma20)
+    bullish++;
+  else
+    bearish++;
 
-  if(ma20>ma50)bullish++;
-  else bearish++;
+  if(ma20>ma50)
+    bullish++;
+  else
+    bearish++;
 
-  if(ema20>ema50)bullish++;
-  else bearish++;
+  if(ema20>ema50)
+    bullish++;
+  else
+    bearish++;
 
-  if(r>55)bullish++;
-  if(r<45)bearish++;
+  if(r>55)
+    bullish++;
 
-  if(m?.line>m?.signal)bullish++;
-  if(m?.line<m?.signal)bearish++;
+  if(r<45)
+    bearish++;
 
-  if(bullish>bearish)trend="BULLISH";
-  if(bearish>bullish)trend="BEARISH";
+  if(m?.line>m?.signal)
+    bullish++;
+
+  if(m?.line<m?.signal)
+    bearish++;
+
+  if(bullish>bearish)
+    trend="BULLISH";
+
+  if(bearish>bullish)
+    trend="BEARISH";
 
   return {
     tf,
@@ -479,18 +918,31 @@ async function analyzeTimeframe(category,symbol,tf){
     rsi:r,
     macd:m?.line??null,
     macdSignal:m?.signal??null,
-    macdHistogram:m?.histogram??null,
+    macdHistogram:
+      m?.histogram??null,
     atr:a,
     bollinger:bb,
+    bb,
     vwap:vw,
     stochastic:stoch,
     momentum:mom,
     divergence:div,
     volumeRatio,
     supportResistance:sr,
-    high:Math.max(...candles.slice(-20).map(x=>x.high)),
-    low:Math.min(...candles.slice(-20).map(x=>x.low)),
-    structure:structure(candles),
+    high:
+      Math.max(
+        ...candles
+          .slice(-20)
+          .map(x=>x.high)
+      ),
+    low:
+      Math.min(
+        ...candles
+          .slice(-20)
+          .map(x=>x.low)
+      ),
+    structure:
+      structure(candles),
     trend
   };
 }
@@ -499,53 +951,92 @@ async function analyzeTimeframe(category,symbol,tf){
    ORDER BOOK
    ========================================================= */
 
-async function orderBook(category,symbol){
+async function orderBook(
+  category,
+  symbol
+){
 
-  const r=await bybit(
-    `/v5/market/orderbook?category=${category}&symbol=${symbol}&limit=50`
-  );
+  const r=
+    await bybit(
+      `/v5/market/orderbook`+
+      `?category=${category}`+
+      `&symbol=${symbol}`+
+      `&limit=50`
+    );
 
-  const bids=(r.b||[]).map(x=>[
-    num(x[0]),
-    num(x[1])
-  ]);
+  const bids=
+    (r.b||[])
+      .map(x=>[
+        num(x[0]),
+        num(x[1])
+      ]);
 
-  const asks=(r.a||[]).map(x=>[
-    num(x[0]),
-    num(x[1])
-  ]);
+  const asks=
+    (r.a||[])
+      .map(x=>[
+        num(x[0]),
+        num(x[1])
+      ]);
 
-  const buy=bids.reduce(
-    (s,x)=>s+x[0]*x[1],
-    0
-  );
+  const buy=
+    bids.reduce(
+      (s,x)=>
+        s+x[0]*x[1],
+      0
+    );
 
-  const sell=asks.reduce(
-    (s,x)=>s+x[0]*x[1],
-    0
-  );
+  const sell=
+    asks.reduce(
+      (s,x)=>
+        s+x[0]*x[1],
+      0
+    );
 
-  const total=buy+sell;
+  const total=
+    buy+sell;
 
   return {
     buy,
     sell,
-    buyShare:total?buy/total*100:50,
-    sellShare:total?sell/total*100:50,
+
+    buyShare:
+      total
+        ?buy/total*100
+        :50,
+
+    sellShare:
+      total
+        ?sell/total*100
+        :50,
+
     pressure:
       buy>sell*1.15
-      ?"BUY_PRESSURE":
+        ?"BUY_PRESSURE"
+        :
       sell>buy*1.15
-      ?"SELL_PRESSURE":
-      "NEUTRAL",
-    bestBid:bids[0]?.[0]??null,
-    bestAsk:asks[0]?.[0]??null,
-    buyWalls:bids
-      .sort((a,b)=>b[1]-a[1])
-      .slice(0,10),
-    sellWalls:asks
-      .sort((a,b)=>b[1]-a[1])
-      .slice(0,10)
+        ?"SELL_PRESSURE"
+        :
+        "NEUTRAL",
+
+    bestBid:
+      bids[0]?.[0]??null,
+
+    bestAsk:
+      asks[0]?.[0]??null,
+
+    buyWalls:
+      bids
+        .sort(
+          (a,b)=>b[1]-a[1]
+        )
+        .slice(0,10),
+
+    sellWalls:
+      asks
+        .sort(
+          (a,b)=>b[1]-a[1]
+        )
+        .slice(0,10)
   };
 }
 
@@ -553,11 +1044,18 @@ async function orderBook(category,symbol){
    FOOTPRINT
    ========================================================= */
 
-async function footprint(category,symbol){
+async function footprint(
+  category,
+  symbol
+){
 
-  const r=await bybit(
-    `/v5/market/recent-trade?category=${category}&symbol=${symbol}&limit=1000`
-  );
+  const r=
+    await bybit(
+      `/v5/market/recent-trade`+
+      `?category=${category}`+
+      `&symbol=${symbol}`+
+      `&limit=1000`
+    );
 
   let buyVolume=0;
   let sellVolume=0;
@@ -568,35 +1066,51 @@ async function footprint(category,symbol){
   let buyTrades=0;
   let sellTrades=0;
 
-  for(const t of r.list||[]){
+  for(
+    const t of
+    r.list||[]
+  ){
 
-    const size=num(t.size);
-    const price=num(t.price);
+    const size=
+      num(t.size);
 
-    const side=String(t.side||"").toLowerCase();
+    const price=
+      num(t.price);
+
+    const side=
+      String(
+        t.side||""
+      ).toLowerCase();
 
     if(side==="buy"){
 
       buyVolume+=size;
-      buyNotional+=size*price;
+      buyNotional+=
+        size*price;
       buyTrades++;
     }
 
     if(side==="sell"){
 
       sellVolume+=size;
-      sellNotional+=size*price;
+      sellNotional+=
+        size*price;
       sellTrades++;
     }
   }
 
-  const total=buyNotional+sellNotional;
+  const total=
+    buyNotional+
+    sellNotional;
 
-  const delta=buyNotional-sellNotional;
+  const delta=
+    buyNotional-
+    sellNotional;
 
-  const deltaPercent=total?
-    delta/total*100:
-    0;
+  const deltaPercent=
+    total
+      ?delta/total*100
+      :0;
 
   return {
     buyVolume,
@@ -607,12 +1121,15 @@ async function footprint(category,symbol){
     sellTrades,
     delta,
     deltaPercent,
+
     pressure:
       deltaPercent>=10
-      ?"BUY_PRESSURE":
+        ?"BUY_PRESSURE"
+        :
       deltaPercent<=-10
-      ?"SELL_PRESSURE":
-      "NEUTRAL"
+        ?"SELL_PRESSURE"
+        :
+        "NEUTRAL"
   };
 }
 
@@ -620,7 +1137,9 @@ async function footprint(category,symbol){
    FUTURES
    ========================================================= */
 
-async function futuresData(symbol){
+async function futuresData(
+  symbol
+){
 
   const result={
     ticker:null,
@@ -631,41 +1150,62 @@ async function futuresData(symbol){
 
   try{
 
-    const r=await bybit(
-      `/v5/market/tickers?category=linear&symbol=${symbol}`
-    );
+    const r=
+      await bybit(
+        `/v5/market/tickers`+
+        `?category=linear`+
+        `&symbol=${symbol}`
+      );
 
-    result.ticker=r.list?.[0]||null;
-
-  }catch{}
-
-  try{
-
-    const r=await bybit(
-      `/v5/market/open-interest?category=linear&symbol=${symbol}&intervalTime=5min&limit=1`
-    );
-
-    result.oi=r.list?.[0]||null;
+    result.ticker=
+      r.list?.[0]||null;
 
   }catch{}
 
   try{
 
-    const r=await bybit(
-      `/v5/market/funding/history?category=linear&symbol=${symbol}&limit=1`
-    );
+    const r=
+      await bybit(
+        `/v5/market/open-interest`+
+        `?category=linear`+
+        `&symbol=${symbol}`+
+        `&intervalTime=5min`+
+        `&limit=1`
+      );
 
-    result.funding=r.list?.[0]||null;
+    result.oi=
+      r.list?.[0]||null;
 
   }catch{}
 
   try{
 
-    const r=await bybit(
-      `/v5/market/account-ratio?category=linear&symbol=${symbol}&period=5min&limit=1`
-    );
+    const r=
+      await bybit(
+        `/v5/market/funding/history`+
+        `?category=linear`+
+        `&symbol=${symbol}`+
+        `&limit=1`
+      );
 
-    result.ratio=r.list?.[0]||null;
+    result.funding=
+      r.list?.[0]||null;
+
+  }catch{}
+
+  try{
+
+    const r=
+      await bybit(
+        `/v5/market/account-ratio`+
+        `?category=linear`+
+        `&symbol=${symbol}`+
+        `&period=5min`+
+        `&limit=1`
+      );
+
+    result.ratio=
+      r.list?.[0]||null;
 
   }catch{}
 
@@ -676,30 +1216,43 @@ async function futuresData(symbol){
    DEEP ANALYSIS
    ========================================================= */
 
-async function deepAnalyze(symbol,requestedTf="15"){
+async function deepAnalyze(
+  symbol,
+  requestedTf="15"
+){
 
-  symbol=cleanSymbol(symbol);
+  symbol=
+    cleanSymbol(symbol);
 
   if(!symbol){
-    throw new Error("Symbol is required");
+
+    throw new Error(
+      "Symbol is required"
+    );
   }
 
-  const category=await findMarket(symbol);
+  const category=
+    await findMarket(symbol);
 
   if(!category){
+
     throw new Error(
       `Symbol ${symbol} not found on Bybit`
     );
   }
 
   const selected=
-    TF_LIST.includes(requestedTf)
+    TF_LIST.includes(
+      requestedTf
+    )
       ?requestedTf
       :"15";
 
   const analyses=[];
 
-  for(const tf of TF_LIST){
+  for(
+    const tf of TF_LIST
+  ){
 
     try{
 
@@ -717,27 +1270,40 @@ async function deepAnalyze(symbol,requestedTf="15"){
   }
 
   const selectedAnalysis=
-    analyses.find(x=>x.tf===selected)||
-    analyses.find(x=>x.tf==="15")||
+    analyses.find(
+      x=>x.tf===selected
+    )||
+    analyses.find(
+      x=>x.tf==="15"
+    )||
     analyses[0];
 
   const [
     order,
     foot,
     futures
-  ]=await Promise.all([
-    orderBook(category,symbol).catch(()=>null),
-    footprint(category,symbol).catch(()=>null),
-    category==="linear"
-      ?futuresData(symbol)
-      :null
-  ]);
+  ]=
+    await Promise.all([
+      orderBook(
+        category,
+        symbol
+      ).catch(()=>null),
+
+      footprint(
+        category,
+        symbol
+      ).catch(()=>null),
+
+      category==="linear"
+        ?futuresData(symbol)
+        :null
+    ]);
 
   const price=
     selectedAnalysis?.price||
-    num(futures?.ticker?.lastPrice);
-
-  const a=selectedAnalysis?.atr||0;
+    num(
+      futures?.ticker?.lastPrice
+    );
 
   return {
     symbol,
@@ -749,7 +1315,8 @@ async function deepAnalyze(symbol,requestedTf="15"){
     footprint:foot,
     futures,
     price,
-    generatedAt:new Date().toISOString()
+    generatedAt:
+      new Date().toISOString()
   };
 }
 
@@ -765,15 +1332,29 @@ const GLOBAL_NEWS_FEEDS=[
 ];
 
 /*
-  Iran news ONLY from internal Iranian sources.
-  No foreign Iran-news feed is used here.
+   IMPORTANT:
+   Iran News is restricted to Iranian domestic sources.
+   No BBC / CNN / Reuters / NYT / foreign source is used
+   in this section.
 */
 
 const IRAN_NEWS_FEEDS=[
+  "https://www.irna.ir/rss",
   "https://www.isna.ir/rss",
-  "https://www.isna.ir/rss/homepage",
-  "https://www.irna.ir/rss"
+  "https://www.mehrnews.com/rss",
+  "https://www.tasnimnews.com/fa/rss/feed/0/8/0/%D9%85%D9%87%D9%85%D8%AA%D8%B1%DB%8C%D9%86-%D8%AA%D8%B3%D9%86%DB%8C%D9%85"
 ];
+
+const IRAN_SOURCE_NAMES={
+  "https://www.irna.ir/rss":
+    "IRNA",
+  "https://www.isna.ir/rss":
+    "ISNA",
+  "https://www.mehrnews.com/rss":
+    "Mehr News",
+  "https://www.tasnimnews.com/fa/rss/feed/0/8/0/%D9%85%D9%87%D9%85%D8%AA%D8%B1%DB%8C%D9%86-%D8%AA%D8%B3%D9%86%DB%8C%D9%85":
+    "Tasnim"
+};
 
 const SHOPPING_FEEDS=[
   "https://news.google.com/rss/search?q=best+deals+shopping&hl=en-US&gl=US&ceid=US:en",
@@ -788,10 +1369,22 @@ const SHOPPING_FEEDS=[
 function stripXml(s){
 
   return String(s||"")
-    .replace(/<!\[CDATA\[/g,"")
-    .replace(/\]\]>/g,"")
-    .replace(/<[^>]+>/g," ")
-    .replace(/\s+/g," ")
+    .replace(
+      /<!\[CDATA\[/g,
+      ""
+    )
+    .replace(
+      /\]\]>/g,
+      ""
+    )
+    .replace(
+      /<[^>]+>/g,
+      " "
+    )
+    .replace(
+      /\s+/g,
+      " "
+    )
     .trim();
 }
 
@@ -800,29 +1393,39 @@ function xmlItems(xml){
   const result=[];
 
   const blocks=
-    xml.match(/<item[\s\S]*?<\/item>/gi)||[];
+    xml.match(
+      /<item[\s\S]*?<\/item>/gi
+    )||[];
 
-  for(const block of blocks){
+  for(
+    const block of blocks
+  ){
 
     const title=
       stripXml(
-        (block.match(
-          /<title[^>]*>([\s\S]*?)<\/title>/i
-        )||[])[1]
+        (
+          block.match(
+            /<title[^>]*>([\s\S]*?)<\/title>/i
+          )||[]
+        )[1]
       );
 
     const link=
       stripXml(
-        (block.match(
-          /<link[^>]*>([\s\S]*?)<\/link>/i
-        )||[])[1]
+        (
+          block.match(
+            /<link[^>]*>([\s\S]*?)<\/link>/i
+          )||[]
+        )[1]
       );
 
     const pub=
       stripXml(
-        (block.match(
-          /<pubDate[^>]*>([\s\S]*?)<\/pubDate>/i
-        )||[])[1]
+        (
+          block.match(
+            /<pubDate[^>]*>([\s\S]*?)<\/pubDate>/i
+          )||[]
+        )[1]
       );
 
     if(title){
@@ -838,25 +1441,41 @@ function xmlItems(xml){
   return result;
 }
 
-async function fetchFeeds(feeds,source){
+async function fetchFeeds(
+  feeds,
+  source
+){
 
   const all=[];
 
-  for(const url of feeds){
+  for(
+    const url of feeds
+  ){
 
     try{
 
-      const r=await fetch(url,{
-        headers:{
-          "user-agent":"Global-Pulse/9.0"
-        }
-      });
+      const r=
+        await fetch(
+          url,
+          {
+            headers:{
+              "user-agent":
+                "Global-Pulse/10.0"
+            }
+          }
+        );
 
-      if(!r.ok)continue;
+      if(!r.ok)
+        continue;
 
-      const xml=await r.text();
+      const xml=
+        await r.text();
 
-      for(const x of xmlItems(xml)){
+      for(
+        const x of
+        xmlItems(xml)
+      ){
+
         all.push({
           ...x,
           source
@@ -866,24 +1485,36 @@ async function fetchFeeds(feeds,source){
     }catch{}
   }
 
-  const seen=new Set();
+  const seen=
+    new Set();
+
   const result=[];
 
-  for(const x of all){
+  for(
+    const x of all
+  ){
 
-    const key=x.title.toLowerCase();
+    const key=
+      x.title
+        .toLowerCase()
+        .trim();
 
-    if(seen.has(key))continue;
+    if(seen.has(key))
+      continue;
 
     seen.add(key);
 
     result.push(x);
   }
 
-  return result.slice(0,20);
+  return result.slice(
+    0,
+    20
+  );
 }
 
 async function fetchGlobalNews(){
+
   return fetchFeeds(
     GLOBAL_NEWS_FEEDS,
     "Global Sources"
@@ -891,13 +1522,81 @@ async function fetchGlobalNews(){
 }
 
 async function fetchIranNews(){
-  return fetchFeeds(
-    IRAN_NEWS_FEEDS,
-    "Iranian Sources"
+
+  const all=[];
+
+  for(
+    const url of
+    IRAN_NEWS_FEEDS
+  ){
+
+    try{
+
+      const r=
+        await fetch(
+          url,
+          {
+            headers:{
+              "user-agent":
+                "Global-Pulse/10.0"
+            }
+          }
+        );
+
+      if(!r.ok)
+        continue;
+
+      const xml=
+        await r.text();
+
+      const source=
+        IRAN_SOURCE_NAMES[url]||
+        "Iranian Source";
+
+      for(
+        const x of
+        xmlItems(xml)
+      ){
+
+        all.push({
+          ...x,
+          source
+        });
+      }
+
+    }catch{}
+  }
+
+  const seen=
+    new Set();
+
+  const result=[];
+
+  for(
+    const x of all
+  ){
+
+    const key=
+      x.title
+        .toLowerCase()
+        .trim();
+
+    if(seen.has(key))
+      continue;
+
+    seen.add(key);
+
+    result.push(x);
+  }
+
+  return result.slice(
+    0,
+    20
   );
 }
 
 async function fetchShopping(){
+
   return fetchFeeds(
     SHOPPING_FEEDS,
     "Shopping Sources"
@@ -908,29 +1607,38 @@ async function fetchShopping(){
    TRENDS
    ========================================================= */
 
-async function fetchCountryTrend(country){
+async function fetchCountryTrend(
+  country
+){
 
   try{
 
-    const r=await fetch(
-      `https://trends.google.com/trending/rss?geo=${country.code}`,
-      {
-        headers:{
-          "user-agent":"Mozilla/5.0 Global-Pulse"
+    const r=
+      await fetch(
+        `https://trends.google.com/trending/rss?geo=${country.code}`,
+        {
+          headers:{
+            "user-agent":
+              "Mozilla/5.0 Global-Pulse"
+          }
         }
-      }
-    );
+      );
 
-    if(!r.ok)throw new Error();
+    if(!r.ok)
+      throw new Error();
 
-    const xml=await r.text();
+    const xml=
+      await r.text();
 
     return {
       country:country.name,
       code:country.code,
-      trends:xmlItems(xml)
-        .slice(0,10)
-        .map(x=>x.title)
+      trends:
+        xmlItems(xml)
+          .slice(0,10)
+          .map(
+            x=>x.title
+          )
     };
 
   }catch{
@@ -947,39 +1655,54 @@ async function fetchCountryTrend(country){
    TELEGRAM
    ========================================================= */
 
-async function telegram(env,method,body){
+async function telegram(
+  env,
+  method,
+  body
+){
 
   if(!env.TELEGRAM_BOT_TOKEN){
+
     throw new Error(
       "TELEGRAM_BOT_TOKEN is missing"
     );
   }
 
-  const r=await fetch(
-    `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/${method}`,
-    {
-      method:"POST",
-      headers:{
-        "content-type":"application/json"
-      },
-      body:JSON.stringify(body)
-    }
-  );
+  const r=
+    await fetch(
+      `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/${method}`,
+      {
+        method:"POST",
+        headers:{
+          "content-type":
+            "application/json"
+        },
+        body:
+          JSON.stringify(body)
+      }
+    );
 
-  const j=await r.json();
+  const j=
+    await r.json();
 
   if(!j.ok){
+
     throw new Error(
-      j.description||"Telegram error"
+      j.description||
+      "Telegram error"
     );
   }
 
   return j;
 }
 
-async function sendTelegram(env,message){
+async function sendTelegram(
+  env,
+  message
+){
 
   if(!env.TELEGRAM_CHANNEL_ID){
+
     throw new Error(
       "TELEGRAM_CHANNEL_ID is missing"
     );
@@ -989,8 +1712,11 @@ async function sendTelegram(env,message){
     env,
     "sendMessage",
     {
-      chat_id:env.TELEGRAM_CHANNEL_ID,
+      chat_id:
+        env.TELEGRAM_CHANNEL_ID,
+
       text:message,
+
       disable_web_page_preview:true
     }
   );
@@ -1000,16 +1726,33 @@ async function sendTelegram(env,message){
    LANGUAGE
    ========================================================= */
 
-const userLanguages=new Map();
+const userLanguages=
+  new Map();
 
-function getLang(userId){
+const pendingSymbols=
+  new Map();
 
-  return userLanguages.get(String(userId))||"en";
+function getLang(
+  userId
+){
+
+  return (
+    userLanguages.get(
+      String(userId)
+    )||"en"
+  );
 }
 
-function setLang(userId,lang){
+function setLang(
+  userId,
+  lang
+){
 
-  if(lang!=="fa"&&lang!=="en"){
+  if(
+    lang!=="fa"&&
+    lang!=="en"
+  ){
+
     lang="en";
   }
 
@@ -1021,8 +1764,37 @@ function setLang(userId,lang){
   return lang;
 }
 
+function setPendingSymbol(
+  userId,
+  symbol
+){
+
+  pendingSymbols.set(
+    String(userId),
+    cleanSymbol(symbol)
+  );
+}
+
+function getPendingSymbol(
+  userId
+){
+
+  return pendingSymbols.get(
+    String(userId)
+  )||null;
+}
+
+function clearPendingSymbol(
+  userId
+){
+
+  pendingSymbols.delete(
+    String(userId)
+  );
+}
+
 /* =========================================================
-   TELEGRAM MESSAGES
+   LANGUAGE KEYBOARD
    ========================================================= */
 
 function languageKeyboard(){
@@ -1032,344 +1804,800 @@ function languageKeyboard(){
       [
         {
           text:"🇮🇷 فارسی",
-          callback_data:"lang_fa"
+          callback_data:
+            "lang_fa"
         },
         {
           text:"🇬🇧 English",
-          callback_data:"lang_en"
+          callback_data:
+            "lang_en"
         }
       ]
     ]
   };
 }
 
-async function sendLanguageMenu(env,chatId){
+async function sendLanguageMenu(
+  env,
+  chatId
+){
 
   return telegram(
     env,
     "sendMessage",
     {
       chat_id:chatId,
-      text:
-`🌐 Global Pulse
 
-زبان را انتخاب کنید:
-Choose your language:`,
-      reply_markup:languageKeyboard()
+      text:
+`🌐 GLOBAL PULSE
+
+🇮🇷 فارسی
+🇬🇧 English
+
+زبان / Language`,
+
+      reply_markup:
+        languageKeyboard()
     }
   );
 }
 
-function cryptoText(a,lang="en"){
+/* =========================================================
+   TIMEFRAME KEYBOARD
+   ========================================================= */
 
-  const x=a.selectedAnalysis||{};
-  const o=a.orderBook;
-  const f=a.footprint;
+function timeframeKeyboard(
+  lang
+){
+
+  const n=
+    TF_NAMES[lang]||
+    TF_NAMES.en;
+
+  return {
+    inline_keyboard:[
+      [
+        {
+          text:`1m — ${n["1"]}`,
+          callback_data:"tf_1"
+        },
+        {
+          text:`3m — ${n["3"]}`,
+          callback_data:"tf_3"
+        },
+        {
+          text:`5m — ${n["5"]}`,
+          callback_data:"tf_5"
+        }
+      ],
+      [
+        {
+          text:`15m — ${n["15"]}`,
+          callback_data:"tf_15"
+        },
+        {
+          text:`30m — ${n["30"]}`,
+          callback_data:"tf_30"
+        },
+        {
+          text:`1H — ${n["60"]}`,
+          callback_data:"tf_60"
+        }
+      ],
+      [
+        {
+          text:`4H — ${n["240"]}`,
+          callback_data:"tf_240"
+        },
+        {
+          text:`D — ${n["D"]}`,
+          callback_data:"tf_D"
+        }
+      ]
+    ]
+  };
+}
+
+async function sendTimeframeMenu(
+  env,
+  chatId,
+  symbol
+){
+
+  const lang=
+    getLang(chatId);
+
+  const text=
+    lang==="fa"
+      ?
+`🪙 رمز ارز: ${symbol}
+
+⏱ تایم‌فریم تحلیل را انتخاب کنید:`
+      :
+`🪙 Symbol: ${symbol}
+
+⏱ Select analysis timeframe:`;
+
+  return telegram(
+    env,
+    "sendMessage",
+    {
+      chat_id:chatId,
+      text,
+      reply_markup:
+        timeframeKeyboard(lang)
+    }
+  );
+}
+
+/* =========================================================
+   CRYPTO TEXT
+   ========================================================= */
+
+function cryptoText(
+  a,
+  lang="en"
+){
+
+  const x=
+    a.selectedAnalysis||{};
+
+  const o=
+    a.orderBook;
+
+  const f=
+    a.footprint;
+
+  const tf=
+    TF_NAMES[lang]||
+    TF_NAMES.en;
+
+  const safe=
+    v=>
+      Number.isFinite(
+        Number(v)
+      )
+        ?Number(v)
+        :0;
+
+  const fixed=
+    (v,d=4)=>
+      safe(v).toFixed(d);
+
+  const support=
+    (
+      x.supportResistance
+        ?.supports||[]
+    )
+      .slice(0,5)
+      .map(
+        v=>fixed(v,8)
+      )
+      .join("\n")||"-";
+
+  const resistance=
+    (
+      x.supportResistance
+        ?.resistances||[]
+    )
+      .slice(0,5)
+      .map(
+        v=>fixed(v,8)
+      )
+      .join("\n")||"-";
+
+  const multi=
+    (a.analyses||[])
+      .map(
+        z=>
+          `${tf[z.tf]||z.tf} | `+
+          `${z.trend||"-"} | `+
+          `RSI ${fixed(z.rsi,1)}`
+      )
+      .join("\n")||"-";
 
   if(lang==="fa"){
 
     return `
 🪙 GLOBAL PULSE — رادار کریپتو
 
-رمز ارز: ${a.symbol}
-بازار: ${a.category}
-تایم‌فریم: ${a.requestedTimeframe}
+🔎 رمز ارز:
+${a.symbol}
+
+🏦 بازار:
+${a.category==="linear"
+  ?"Futures"
+  :"Spot"}
+
+⏱ تایم‌فریم:
+${tf[a.requestedTimeframe]||a.requestedTimeframe}
 
 ━━━━━━━━━━━━━━━━
 
-💰 قیمت: ${a.price}
+💰 قیمت:
+${a.price}
 
-📊 تحلیل اصلی
-روند: ${x.trend}
-ساختار: ${x.structure}
+━━━━━━━━━━━━━━━━
 
-📈 RSI: ${num(x.rsi).toFixed(2)}
-📉 MACD: ${num(x.macd).toFixed(4)}
-📊 Signal: ${num(x.macdSignal).toFixed(4)}
-📐 Histogram: ${num(x.macdHistogram).toFixed(4)}
+📊 تحلیل تکنیکال
 
-📏 ATR: ${num(x.atr).toFixed(4)}
+روند:
+${x.trend||"-"}
 
-📦 Volume Ratio:
-${num(x.volumeRatio).toFixed(2)}
+ساختار:
+${x.structure||"-"}
+
+RSI:
+${fixed(x.rsi,2)}
+
+MACD:
+${fixed(x.macd,6)}
+
+MACD Signal:
+${fixed(x.macdSignal,6)}
+
+MACD Histogram:
+${fixed(x.macdHistogram,6)}
+
+EMA20:
+${fixed(x.ema20,8)}
+
+EMA50:
+${fixed(x.ema50,8)}
+
+MA20:
+${fixed(x.ma20,8)}
+
+MA50:
+${fixed(x.ma50,8)}
+
+ATR:
+${fixed(x.atr,8)}
+
+Volume Ratio:
+${fixed(x.volumeRatio,2)}
 
 ━━━━━━━━━━━━━━━━
 
 🔀 واگرایی
 
+نوع:
 ${x.divergence?.type||"NONE"}
-قدرت: ${x.divergence?.strength||0}
+
+قدرت:
+${x.divergence?.strength||0}
 
 ━━━━━━━━━━━━━━━━
 
 🧱 حمایت و مقاومت
 
 حمایت:
-${(x.supportResistance?.supports||[])
-  .slice(0,5)
-  .map(v=>num(v).toFixed(4))
-  .join("\n")}
+${support}
 
 مقاومت:
-${(x.supportResistance?.resistances||[])
-  .slice(0,5)
-  .map(v=>num(v).toFixed(4))
-  .join("\n")}
+${resistance}
 
 ━━━━━━━━━━━━━━━━
 
 🧮 اندیکاتورها
 
-VWAP: ${num(x.vwap).toFixed(4)}
-Stochastic: ${num(x.stochastic).toFixed(2)}
-Momentum: ${num(x.momentum).toFixed(2)}%
+VWAP:
+${fixed(x.vwap,8)}
+
+Stochastic:
+${fixed(x.stochastic,2)}
+
+Momentum:
+${fixed(x.momentum,2)}%
 
 ━━━━━━━━━━━━━━━━
 
-🧲 دیوارهای سفارش
+🧲 ORDER BOOK
 
-خرید: ${o?o.buyShare.toFixed(2):"-"}%
-فروش: ${o?o.sellShare.toFixed(2):"-"}%
-فشار: ${o?.pressure||"N/A"}
+Buy:
+${o?fixed(o.buy,2):"-"}
+
+Sell:
+${o?fixed(o.sell,2):"-"}
+
+Buy Share:
+${o?fixed(o.buyShare,2):"-"}%
+
+Sell Share:
+${o?fixed(o.sellShare,2):"-"}%
+
+Pressure:
+${o?.pressure||"N/A"}
+
+Best Bid:
+${o?fixed(o.bestBid,8):"-"}
+
+Best Ask:
+${o?fixed(o.bestAsk,8):"-"}
 
 ━━━━━━━━━━━━━━━━
 
-👣 Footprint / Delta
+👣 FOOTPRINT / DELTA
 
-Buy Volume: ${num(f?.buyVolume).toFixed(4)}
-Sell Volume: ${num(f?.sellVolume).toFixed(4)}
-Delta: ${num(f?.delta).toFixed(4)}
-Delta %: ${num(f?.deltaPercent).toFixed(2)}%
-فشار: ${f?.pressure||"N/A"}
+Buy Volume:
+${fixed(f?.buyVolume,4)}
+
+Sell Volume:
+${fixed(f?.sellVolume,4)}
+
+Buy Trades:
+${f?.buyTrades??"-"}
+
+Sell Trades:
+${f?.sellTrades??"-"}
+
+Delta:
+${fixed(f?.delta,4)}
+
+Delta %:
+${fixed(f?.deltaPercent,2)}%
+
+Pressure:
+${f?.pressure||"N/A"}
 
 ━━━━━━━━━━━━━━━━
 
 🌐 سایر تایم‌فریم‌ها
 
-${a.analyses
-  .map(z=>`${z.tf}m | ${z.trend} | RSI ${num(z.rsi).toFixed(1)}`)
-  .join("\n")}
+${multi}
 
 ━━━━━━━━━━━━━━━━
 
-⚠️ این اطلاعات تحلیل بازار است و توصیه مالی نیست.
+📡 Futures
 
-🌐 Global Pulse
-`;
+${
+  a.futures?.ticker
+    ?
+`Last Price:
+${a.futures.ticker.lastPrice||"-"}
 
+24H Change:
+${
+  a.futures.ticker.price24hPcnt
+    ?
+    (
+      Number(
+        a.futures.ticker.price24hPcnt
+      )*100
+    ).toFixed(2)+"%"
+    :
+    "-"
+}
+
+24H High:
+${a.futures.ticker.highPrice24h||"-"}
+
+24H Low:
+${a.futures.ticker.lowPrice24h||"-"}
+
+Open Interest:
+${a.futures.oi?.openInterest||"-"}
+
+Funding:
+${a.futures.funding?.fundingRate||"-"}`
+    :
+`اطلاعات Futures در دسترس نیست.`
+}
+
+━━━━━━━━━━━━━━━━
+
+⚠️ این اطلاعات تحلیل محاسباتی بازار است و توصیه مالی نیست.
+
+🌐 GLOBAL PULSE
+`.trim();
   }
 
   return `
 🪙 GLOBAL PULSE — CRYPTO RADAR
 
-Symbol: ${a.symbol}
-Market: ${a.category}
-Timeframe: ${a.requestedTimeframe}
+🔎 Symbol:
+${a.symbol}
+
+🏦 Market:
+${a.category==="linear"
+  ?"Futures"
+  :"Spot"}
+
+⏱ Timeframe:
+${tf[a.requestedTimeframe]||a.requestedTimeframe}
 
 ━━━━━━━━━━━━━━━━
 
-💰 Price: ${a.price}
+💰 Price:
+${a.price}
 
-📊 Main Analysis
-Trend: ${x.trend}
-Structure: ${x.structure}
+━━━━━━━━━━━━━━━━
 
-📈 RSI: ${num(x.rsi).toFixed(2)}
-📉 MACD: ${num(x.macd).toFixed(4)}
-📊 Signal: ${num(x.macdSignal).toFixed(4)}
-📐 Histogram: ${num(x.macdHistogram).toFixed(4)}
+📊 Technical Analysis
 
-📏 ATR: ${num(x.atr).toFixed(4)}
+Trend:
+${x.trend||"-"}
 
-📦 Volume Ratio:
-${num(x.volumeRatio).toFixed(2)}
+Structure:
+${x.structure||"-"}
+
+RSI:
+${fixed(x.rsi,2)}
+
+MACD:
+${fixed(x.macd,6)}
+
+MACD Signal:
+${fixed(x.macdSignal,6)}
+
+MACD Histogram:
+${fixed(x.macdHistogram,6)}
+
+EMA20:
+${fixed(x.ema20,8)}
+
+EMA50:
+${fixed(x.ema50,8)}
+
+MA20:
+${fixed(x.ma20,8)}
+
+MA50:
+${fixed(x.ma50,8)}
+
+ATR:
+${fixed(x.atr,8)}
+
+Volume Ratio:
+${fixed(x.volumeRatio,2)}
 
 ━━━━━━━━━━━━━━━━
 
 🔀 Divergence
 
+Type:
 ${x.divergence?.type||"NONE"}
-Strength: ${x.divergence?.strength||0}
+
+Strength:
+${x.divergence?.strength||0}
 
 ━━━━━━━━━━━━━━━━
 
 🧱 Support & Resistance
 
 Support:
-${(x.supportResistance?.supports||[])
-  .slice(0,5)
-  .map(v=>num(v).toFixed(4))
-  .join("\n")}
+${support}
 
 Resistance:
-${(x.supportResistance?.resistances||[])
-  .slice(0,5)
-  .map(v=>num(v).toFixed(4))
-  .join("\n")}
+${resistance}
 
 ━━━━━━━━━━━━━━━━
 
 🧮 Indicators
 
-VWAP: ${num(x.vwap).toFixed(4)}
-Stochastic: ${num(x.stochastic).toFixed(2)}
-Momentum: ${num(x.momentum).toFixed(2)}%
+VWAP:
+${fixed(x.vwap,8)}
+
+Stochastic:
+${fixed(x.stochastic,2)}
+
+Momentum:
+${fixed(x.momentum,2)}%
 
 ━━━━━━━━━━━━━━━━
 
-🧲 Order Walls
+🧲 ORDER BOOK
 
-Buy: ${o?o.buyShare.toFixed(2):"-"}%
-Sell: ${o?o.sellShare.toFixed(2):"-"}%
-Pressure: ${o?.pressure||"N/A"}
+Buy:
+${o?fixed(o.buy,2):"-"}
+
+Sell:
+${o?fixed(o.sell,2):"-"}
+
+Buy Share:
+${o?fixed(o.buyShare,2):"-"}%
+
+Sell Share:
+${o?fixed(o.sellShare,2):"-"}%
+
+Pressure:
+${o?.pressure||"N/A"}
+
+Best Bid:
+${o?fixed(o.bestBid,8):"-"}
+
+Best Ask:
+${o?fixed(o.bestAsk,8):"-"}
 
 ━━━━━━━━━━━━━━━━
 
-👣 Footprint / Delta
+👣 FOOTPRINT / DELTA
 
-Buy Volume: ${num(f?.buyVolume).toFixed(4)}
-Sell Volume: ${num(f?.sellVolume).toFixed(4)}
-Delta: ${num(f?.delta).toFixed(4)}
-Delta %: ${num(f?.deltaPercent).toFixed(2)}%
-Pressure: ${f?.pressure||"N/A"}
+Buy Volume:
+${fixed(f?.buyVolume,4)}
+
+Sell Volume:
+${fixed(f?.sellVolume,4)}
+
+Buy Trades:
+${f?.buyTrades??"-"}
+
+Sell Trades:
+${f?.sellTrades??"-"}
+
+Delta:
+${fixed(f?.delta,4)}
+
+Delta %:
+${fixed(f?.deltaPercent,2)}%
+
+Pressure:
+${f?.pressure||"N/A"}
 
 ━━━━━━━━━━━━━━━━
 
-🌐 Other Timeframes
+🌐 OTHER TIMEFRAMES
 
-${a.analyses
-  .map(z=>`${z.tf}m | ${z.trend} | RSI ${num(z.rsi).toFixed(1)}`)
-  .join("\n")}
+${multi}
+
+━━━━━━━━━━━━━━━━
+
+📡 FUTURES
+
+${
+  a.futures?.ticker
+    ?
+`Last Price:
+${a.futures.ticker.lastPrice||"-"}
+
+24H Change:
+${
+  a.futures.ticker.price24hPcnt
+    ?
+    (
+      Number(
+        a.futures.ticker.price24hPcnt
+      )*100
+    ).toFixed(2)+"%"
+    :
+    "-"
+}
+
+24H High:
+${a.futures.ticker.highPrice24h||"-"}
+
+24H Low:
+${a.futures.ticker.lowPrice24h||"-"}
+
+Open Interest:
+${a.futures.oi?.openInterest||"-"}
+
+Funding:
+${a.futures.funding?.fundingRate||"-"}`
+    :
+`Futures data unavailable.`
+}
 
 ━━━━━━━━━━━━━━━━
 
 ⚠️ Market analysis only. Not financial advice.
 
-🌐 Global Pulse
-`;
+🌐 GLOBAL PULSE
+`.trim();
 }
 
 /* =========================================================
    AUTOMATIC MESSAGES
    ========================================================= */
 
-function newsMessage(items,lang="en"){
-
-  let s=lang==="fa"
-    ?"🌍 GLOBAL PULSE\n📰 اخبار جهان\n\n"
-    :"🌍 GLOBAL PULSE\n📰 GLOBAL NEWS\n\n";
-
-  if(!items.length){
-
-    return s+
-      (lang==="fa"
-        ?"خبر موثق جدیدی در دسترس نیست."
-        :"No reliable global news available.");
-  }
-
-  for(const x of items.slice(0,8)){
-
-    s+=`• ${x.title}\n`;
-
-    if(x.link)s+=`${x.link}\n`;
-
-    s+=`\n`;
-  }
-
-  s+=
-    lang==="fa"
-      ?"━━━━━━━━━━━━━━━━\n🌐 Global Pulse"
-      :"━━━━━━━━━━━━━━━━\n🌐 Global Pulse";
-
-  return s;
-}
-
-function iranMessage(items,lang="en"){
-
-  let s=lang==="fa"
-    ?"🇮🇷 GLOBAL PULSE\n📰 اخبار ایران\n\n"
-    :"🇮🇷 GLOBAL PULSE\n📰 IRAN NEWS\n\n";
-
-  if(!items.length){
-
-    return s+
-      (lang==="fa"
-        ?"خبر جدیدی از منابع داخلی معتبر در دسترس نیست."
-        :"No new news from selected Iranian sources.");
-  }
-
-  for(const x of items.slice(0,8)){
-
-    s+=`• ${x.title}\n`;
-
-    if(x.link)s+=`${x.link}\n`;
-
-    s+=
-      lang==="fa"
-        ?"منبع: منبع داخلی ایران\n\n"
-        :"Source: Iranian internal source\n\n";
-  }
-
-  s+="━━━━━━━━━━━━━━━━\n🌐 Global Pulse";
-
-  return s;
-}
-
-function trendMessage(data,lang="en"){
+function newsMessage(
+  items,
+  lang="en"
+){
 
   let s=
     lang==="fa"
-      ?`🔥 رادار ترند کشورها\n\n🌍 ${data.country}\n\n`
-      :`🔥 COUNTRY TREND RADAR\n\n🌍 ${data.country}\n\n`;
+      ?
+`🌍 GLOBAL PULSE
+📰 اخبار جهان
+
+`
+      :
+`🌍 GLOBAL PULSE
+📰 GLOBAL NEWS
+
+`;
+
+  if(!items.length){
+
+    return s+
+      (
+        lang==="fa"
+          ?
+"No reliable global news available."
+          :
+"No reliable global news available."
+      );
+  }
+
+  for(
+    const x of
+    items.slice(0,8)
+  ){
+
+    s+=
+      `• ${x.title}\n`;
+
+    if(x.link)
+      s+=`${x.link}\n`;
+
+    s+="\n";
+  }
+
+  s+=
+    "━━━━━━━━━━━━━━━━\n"+
+    "🌐 Global Pulse";
+
+  return s;
+}
+
+function iranMessage(
+  items,
+  lang="en"
+){
+
+  let s=
+    lang==="fa"
+      ?
+`🇮🇷 GLOBAL PULSE
+📰 اخبار ایران
+
+منابع: خبرگزاری‌های داخلی ایران
+
+`
+      :
+`🇮🇷 GLOBAL PULSE
+📰 IRAN NEWS
+
+Sources: Iranian domestic news agencies
+
+`;
+
+  if(!items.length){
+
+    return s+
+      (
+        lang==="fa"
+          ?
+"خبر جدیدی از منابع داخلی معتبر ایران در دسترس نیست."
+          :
+"No new news is available from selected Iranian domestic sources."
+      );
+  }
+
+  for(
+    const x of
+    items.slice(0,8)
+  ){
+
+    s+=
+      `• ${x.title}\n`;
+
+    if(x.link)
+      s+=`${x.link}\n`;
+
+    s+=
+      lang==="fa"
+        ?
+`منبع: ${x.source}
+
+`
+        :
+`Source: ${x.source}
+
+`;
+  }
+
+  s+=
+    "━━━━━━━━━━━━━━━━\n"+
+    "🌐 Global Pulse";
+
+  return s;
+}
+
+function trendMessage(
+  data,
+  lang="en"
+){
+
+  let s=
+    lang==="fa"
+      ?
+`🔥 رادار ترند کشورها
+
+🌍 ${data.country}
+
+`
+      :
+`🔥 COUNTRY TREND RADAR
+
+🌍 ${data.country}
+
+`;
 
   if(!data.trends.length){
 
     s+=
       lang==="fa"
-        ?"اطلاعات ترند موثق در حال حاضر در دسترس نیست.\n"
-        :"No reliable trend data available right now.\n";
+        ?
+"اطلاعات ترند در حال حاضر در دسترس نیست.\n"
+        :
+"No reliable trend data available right now.\n";
 
   }else{
 
     data.trends.forEach(
       (x,i)=>{
-        s+=`${i+1}. ${x}\n`;
+        s+=
+          `${i+1}. ${x}\n`;
       }
     );
   }
 
-  s+="\n━━━━━━━━━━━━━━━━\n🌐 Global Pulse";
+  s+=
+    "\n━━━━━━━━━━━━━━━━\n"+
+    "🌐 Global Pulse";
 
   return s;
 }
 
-function shoppingMessage(items,lang="en"){
+function shoppingMessage(
+  items,
+  lang="en"
+){
 
   let s=
     lang==="fa"
-      ?"🛒 GLOBAL PULSE\n🔥 رادار خرید\n\n"
-      :"🛒 GLOBAL PULSE\n🔥 SHOPPING RADAR\n\n";
+      ?
+`🛒 GLOBAL PULSE
+🔥 رادار خرید
+
+`
+      :
+`🛒 GLOBAL PULSE
+🔥 SHOPPING RADAR
+
+`;
 
   if(!items.length){
 
     s+=
       lang==="fa"
-        ?"اطلاعات خرید در دسترس نیست.\n"
-        :"No shopping information available.\n";
+        ?
+"اطلاعات خرید در دسترس نیست.\n"
+        :
+"No shopping information available.\n";
 
   }else{
 
-    for(const x of items.slice(0,8)){
+    for(
+      const x of
+      items.slice(0,8)
+    ){
 
-      s+=`• ${x.title}\n`;
+      s+=
+        `• ${x.title}\n`;
 
-      if(x.link)s+=`${x.link}\n`;
+      if(x.link)
+        s+=`${x.link}\n`;
 
       s+="\n";
     }
   }
 
-  s+="━━━━━━━━━━━━━━━━\n🌐 Global Pulse";
+  s+=
+    "━━━━━━━━━━━━━━━━\n"+
+    "🌐 Global Pulse";
 
   return s;
 }
@@ -1378,88 +2606,134 @@ function shoppingMessage(items,lang="en"){
    AUTOMATIC PUBLISHING
    ========================================================= */
 
-async function automaticPublish(env){
+async function automaticPublish(
+  env
+){
 
-  const langs=["en","fa"];
+  const langs=[
+    "en",
+    "fa"
+  ];
 
-  /* GLOBAL */
+  /* GLOBAL NEWS */
 
-  const global=await fetchGlobalNews();
+  try{
 
-  for(const lang of langs){
+    const global=
+      await fetchGlobalNews();
 
-    try{
+    for(
+      const lang of langs
+    ){
 
-      await sendTelegram(
-        env,
-        newsMessage(global,lang)
-      );
+      try{
 
-    }catch{}
-  }
+        await sendTelegram(
+          env,
+          newsMessage(
+            global,
+            lang
+          )
+        );
+
+      }catch{}
+    }
+
+  }catch{}
 
   await sleep(500);
 
   /* IRAN */
 
-  const iran=await fetchIranNews();
+  try{
 
-  for(const lang of langs){
+    const iran=
+      await fetchIranNews();
 
-    try{
+    for(
+      const lang of langs
+    ){
 
-      await sendTelegram(
-        env,
-        iranMessage(iran,lang)
-      );
+      try{
 
-    }catch{}
-  }
+        await sendTelegram(
+          env,
+          iranMessage(
+            iran,
+            lang
+          )
+        );
+
+      }catch{}
+    }
+
+  }catch{}
 
   await sleep(500);
 
   /* TREND */
 
-  const country=
-    COUNTRIES[
-      Math.floor(
-        Math.random()*COUNTRIES.length
-      )
-    ];
+  try{
 
-  const trend=
-    await fetchCountryTrend(country);
+    const country=
+      COUNTRIES[
+        Math.floor(
+          Math.random()*
+          COUNTRIES.length
+        )
+      ];
 
-  for(const lang of langs){
-
-    try{
-
-      await sendTelegram(
-        env,
-        trendMessage(trend,lang)
+    const trend=
+      await fetchCountryTrend(
+        country
       );
 
-    }catch{}
-  }
+    for(
+      const lang of langs
+    ){
+
+      try{
+
+        await sendTelegram(
+          env,
+          trendMessage(
+            trend,
+            lang
+          )
+        );
+
+      }catch{}
+    }
+
+  }catch{}
 
   await sleep(500);
 
   /* SHOPPING */
 
-  const shopping=
-    await fetchShopping();
+  try{
 
-  for(const lang of langs){
+    const shopping=
+      await fetchShopping();
 
-    try{
+    for(
+      const lang of langs
+    ){
 
-      await sendTelegram(
-        env,
-        shoppingMessage(shopping,lang)
-      );
+      try{
 
-    }catch{}
-  }
+        await sendTelegram(
+          env,
+          shoppingMessage(
+            shopping,
+            lang
+          )
+        );
+
+      }catch{}
+    }
+
+  }catch{}
 }
 
 /* =========================================================
@@ -1471,26 +2745,49 @@ async function handleTelegramUpdate(
   update
 ){
 
-  /* CALLBACK */
+  /* =======================================================
+     CALLBACK
+     ======================================================= */
 
   if(update.callback_query){
 
-    const q=update.callback_query;
+    const q=
+      update.callback_query;
 
-    const chatId=q.message?.chat?.id;
+    const chatId=
+      q.message?.chat?.id;
 
-    if(!chatId)return;
+    if(!chatId)
+      return;
 
-    if(q.data==="lang_fa"){
+    /* LANGUAGE */
 
-      setLang(chatId,"fa");
+    if(
+      q.data==="lang_fa"||
+      q.data==="lang_en"
+    ){
+
+      const lang=
+        q.data==="lang_fa"
+          ?"fa"
+          :"en";
+
+      setLang(
+        chatId,
+        lang
+      );
 
       await telegram(
         env,
         "answerCallbackQuery",
         {
           callback_query_id:q.id,
-          text:"زبان فارسی انتخاب شد"
+          text:
+            lang==="fa"
+              ?
+              "زبان فارسی فعال شد"
+              :
+              "English selected"
         }
       );
 
@@ -1499,54 +2796,206 @@ async function handleTelegramUpdate(
         "sendMessage",
         {
           chat_id:chatId,
+
           text:
+            lang==="fa"
+              ?
 `🇮🇷 زبان فارسی فعال شد.
 
 🪙 نام رمز ارز را ارسال کنید.
-مثال:
-BTCUSDT
 
-تایم‌فریم پیش‌فرض: 15 دقیقه`,
-          reply_markup:{
-            remove_keyboard:true
-          }
+مثال:
+BTC
+BTCUSDT
+PEPE
+PEPEUSDT`
+              :
+`🇬🇧 English selected.
+
+🪙 Send a crypto symbol.
+
+Examples:
+BTC
+BTCUSDT
+PEPE
+PEPEUSDT`,
+
+          reply_markup:
+            {
+              inline_keyboard:[
+                [
+                  {
+                    text:
+                      lang==="fa"
+                        ?
+                        "🌐 تغییر زبان"
+                        :
+                        "🌐 Change Language",
+                    callback_data:
+                      "open_language"
+                  }
+                ]
+              ]
+            }
         }
       );
 
       return;
     }
 
-    if(q.data==="lang_en"){
+    /* OPEN LANGUAGE */
 
-      setLang(chatId,"en");
+    if(
+      q.data==="open_language"
+    ){
+
+      await telegram(
+        env,
+        "answerCallbackQuery",
+        {
+          callback_query_id:q.id
+        }
+      );
+
+      await sendLanguageMenu(
+        env,
+        chatId
+      );
+
+      return;
+    }
+
+    /* TIMEFRAME */
+
+    if(
+      q.data?.startsWith("tf_")
+    ){
+
+      const tf=
+        q.data
+          .replace(
+            "tf_",
+            ""
+          );
+
+      if(
+        !TF_LIST.includes(tf)
+      ){
+
+        await telegram(
+          env,
+          "answerCallbackQuery",
+          {
+            callback_query_id:q.id,
+            text:
+              "Invalid timeframe"
+          }
+        );
+
+        return;
+      }
+
+      const symbol=
+        getPendingSymbol(
+          chatId
+        );
+
+      if(!symbol){
+
+        await telegram(
+          env,
+          "answerCallbackQuery",
+          {
+            callback_query_id:q.id,
+            text:
+              "Symbol expired. Send it again."
+          }
+        );
+
+        return;
+      }
+
+      const lang=
+        getLang(chatId);
 
       await telegram(
         env,
         "answerCallbackQuery",
         {
           callback_query_id:q.id,
-          text:"English selected"
-        }
-      );
-
-      await telegram(
-        env,
-        "sendMessage",
-        {
-          chat_id:chatId,
           text:
-`🇬🇧 English selected.
-
-🪙 Send a crypto symbol.
-Example:
-BTCUSDT
-
-Default timeframe: 15 minutes`,
-          reply_markup:{
-            remove_keyboard:true
-          }
+            lang==="fa"
+              ?
+              `تایم‌فریم ${TF_NAMES.fa[tf]} انتخاب شد`
+              :
+              `${TF_NAMES.en[tf]} selected`
         }
       );
+
+      try{
+
+        await telegram(
+          env,
+          "sendMessage",
+          {
+            chat_id:chatId,
+            text:
+              lang==="fa"
+                ?
+"⏳ در حال دریافت داده واقعی Bybit و محاسبه تحلیل..."
+                :
+"⏳ Fetching live Bybit data and calculating analysis..."
+          }
+        );
+
+        const data=
+          await deepAnalyze(
+            symbol,
+            tf
+          );
+
+        await telegram(
+          env,
+          "sendMessage",
+          {
+            chat_id:chatId,
+
+            text:
+              cryptoText(
+                data,
+                lang
+              ),
+
+            disable_web_page_preview:
+              true
+          }
+        );
+
+        clearPendingSymbol(
+          chatId
+        );
+
+      }catch(e){
+
+        await telegram(
+          env,
+          "sendMessage",
+          {
+            chat_id:chatId,
+
+            text:
+              lang==="fa"
+                ?
+`❌ خطا در تحلیل
+
+${e.message}`
+                :
+`❌ Analysis error
+
+${e.message}`
+          }
+        );
+      }
 
       return;
     }
@@ -1554,21 +3003,33 @@ Default timeframe: 15 minutes`,
     return;
   }
 
-  /* MESSAGE */
+  /* =======================================================
+     MESSAGE
+     ======================================================= */
 
-  const message=update.message;
+  const message=
+    update.message;
 
-  if(!message)return;
+  if(!message)
+    return;
 
-  const chatId=message.chat?.id;
+  const chatId=
+    message.chat?.id;
 
-  const text=String(
-    message.text||""
-  ).trim();
+  const rawText=
+    String(
+      message.text||""
+    ).trim();
 
-  if(!chatId)return;
+  if(!chatId||!rawText)
+    return;
 
-  if(text==="/start"||text==="/language"){
+  /* START / LANGUAGE */
+
+  if(
+    rawText==="/start"||
+    rawText==="/language"
+  ){
 
     await sendLanguageMenu(
       env,
@@ -1578,15 +3039,21 @@ Default timeframe: 15 minutes`,
     return;
   }
 
-  const lang=getLang(chatId);
+  const lang=
+    getLang(chatId);
 
-  if(text==="/help"){
+  /* HELP */
+
+  if(
+    rawText==="/help"
+  ){
 
     await telegram(
       env,
       "sendMessage",
       {
         chat_id:chatId,
+
         text:
           lang==="fa"
             ?
@@ -1595,115 +3062,337 @@ Default timeframe: 15 minutes`,
 نام رمز ارز را ارسال کنید.
 
 مثال:
+
+BTC
 BTCUSDT
+ETH
 ETHUSDT
-SOLUSDT
+PEPE
+PEPEUSDT
+
+بعد از انتخاب ارز،
+تایم‌فریم تحلیل را انتخاب می‌کنید.
+
+تایم‌فریم‌ها:
+
+1 دقیقه
+3 دقیقه
+5 دقیقه
+15 دقیقه
+30 دقیقه
+1 ساعت
+4 ساعت
+روزانه
 
 تحلیل شامل:
+
 RSI
 MACD
-واگرایی
-حمایت و مقاومت
-Order Book
-دیوارهای خرید و فروش
-Footprint
-Delta
+EMA
+MA
+ATR
+Bollinger
 VWAP
 Stochastic
 Momentum
-Volume
-ساختار بازار
-تایم‌فریم‌های مختلف`
-            :
-`🪙 Crypto Radar
-
-Send a crypto symbol.
-
-Examples:
-BTCUSDT
-ETHUSDT
-SOLUSDT
-
-Analysis includes:
-RSI
-MACD
-Divergence
-Support & Resistance
+واگرایی
+حمایت
+مقاومت
 Order Book
 Buy/Sell Walls
 Footprint
 Delta
+Volume
+Market Structure
+Futures
+Funding
+Open Interest
+Multi-Timeframe`
+            :
+`🪙 CRYPTO RADAR
+
+Send a crypto symbol.
+
+Examples:
+
+BTC
+BTCUSDT
+ETH
+ETHUSDT
+PEPE
+PEPEUSDT
+
+After selecting the symbol,
+you can select the analysis timeframe.
+
+Timeframes:
+
+1 Minute
+3 Minutes
+5 Minutes
+15 Minutes
+30 Minutes
+1 Hour
+4 Hours
+Daily
+
+Analysis includes:
+
+RSI
+MACD
+EMA
+MA
+ATR
+Bollinger
 VWAP
 Stochastic
 Momentum
+Divergence
+Support
+Resistance
+Order Book
+Buy/Sell Walls
+Footprint
+Delta
 Volume
 Market Structure
-Multiple Timeframes`
+Futures
+Funding
+Open Interest
+Multi-Timeframe`
       }
     );
 
     return;
   }
 
-  const symbol=cleanSymbol(text);
+  /* =======================================================
+     /crypto and /analyze
+     ======================================================= */
 
-  if(!symbol||symbol.length<3){
+  let cryptoInput=
+    rawText;
 
-    await sendLanguageMenu(
-      env,
-      chatId
-    );
+  if(
+    /^\/crypto(?:@[\w]+)?/i
+      .test(rawText)
+  ){
 
-    return;
+    cryptoInput=
+      rawText.replace(
+        /^\/crypto(?:@[\w]+)?/i,
+        ""
+      ).trim();
+
+  }else if(
+    /^\/analyze(?:@[\w]+)?/i
+      .test(rawText)
+  ){
+
+    cryptoInput=
+      rawText.replace(
+        /^\/analyze(?:@[\w]+)?/i,
+        ""
+      ).trim();
   }
 
-  try{
-
-    await telegram(
-      env,
-      "sendMessage",
-      {
-        chat_id:chatId,
-        text:
-          lang==="fa"
-            ?"⏳ در حال دریافت داده واقعی Bybit و محاسبه تحلیل..."
-            :"⏳ Fetching live Bybit data and calculating analysis..."
-      }
+  const parts=
+    cryptoInput.split(
+      /\s+/
     );
 
-    const data=
-      await deepAnalyze(
-        symbol,
-        "15"
+  const possibleSymbol=
+    parts[0]||"";
+
+  const possibleTf=
+    parts[1]||null;
+
+  /* =======================================================
+     CRYPTO
+     ======================================================= */
+
+  if(
+    isCryptoSymbol(
+      possibleSymbol
+    )
+  ){
+
+    try{
+
+      const symbol=
+        await resolveCryptoSymbol(
+          possibleSymbol
+        );
+
+      /* اگر تایم‌فریم داخل پیام بود */
+
+      if(
+        possibleTf&&
+        TF_LIST.includes(
+          possibleTf
+        )
+      ){
+
+        await telegram(
+          env,
+          "sendMessage",
+          {
+            chat_id:chatId,
+
+            text:
+              lang==="fa"
+                ?
+"⏳ در حال دریافت داده واقعی Bybit و محاسبه تحلیل..."
+                :
+"⏳ Fetching live Bybit data and calculating analysis..."
+          }
+        );
+
+        const data=
+          await deepAnalyze(
+            symbol,
+            possibleTf
+          );
+
+        await telegram(
+          env,
+          "sendMessage",
+          {
+            chat_id:chatId,
+
+            text:
+              cryptoText(
+                data,
+                lang
+              ),
+
+            disable_web_page_preview:
+              true
+          }
+        );
+
+        return;
+      }
+
+      /*
+         نماد پیدا شده:
+         تایم‌فریم را انتخاب کن
+      */
+
+      setPendingSymbol(
+        chatId,
+        symbol
       );
 
-    await telegram(
-      env,
-      "sendMessage",
-      {
-        chat_id:chatId,
-        text:cryptoText(
-          data,
-          lang
-        ),
-        disable_web_page_preview:true
-      }
-    );
+      await telegram(
+        env,
+        "sendMessage",
+        {
+          chat_id:chatId,
 
-  }catch(e){
+          text:
+            lang==="fa"
+              ?
+`✅ رمز ارز پیدا شد:
 
-    await telegram(
-      env,
-      "sendMessage",
-      {
-        chat_id:chatId,
-        text:
-          lang==="fa"
-            ?`❌ خطا\n\n${e.message}`
-            :`❌ Error\n\n${e.message}`
-      }
-    );
+${symbol}
+
+⏱ تایم‌فریم تحلیل را انتخاب کنید:`
+              :
+`✅ Symbol found:
+
+${symbol}
+
+⏱ Select the analysis timeframe:`,
+
+          reply_markup:
+            timeframeKeyboard(
+              lang
+            )
+        }
+      );
+
+      return;
+
+    }catch(e){
+
+      await telegram(
+        env,
+        "sendMessage",
+        {
+          chat_id:chatId,
+
+          text:
+            lang==="fa"
+              ?
+`❌ رمز ارز پیدا نشد.
+
+🔎 ورودی:
+${possibleSymbol}
+
+نمونه:
+BTC
+BTCUSDT
+PEPE
+PEPEUSDT`
+              :
+`❌ Cryptocurrency not found.
+
+🔎 Input:
+${possibleSymbol}
+
+Examples:
+BTC
+BTCUSDT
+PEPE
+PEPEUSDT`
+        }
+      );
+
+      return;
+    }
   }
+
+  /* =======================================================
+     UNKNOWN
+     ======================================================= */
+
+  await telegram(
+    env,
+    "sendMessage",
+    {
+      chat_id:chatId,
+
+      text:
+        lang==="fa"
+          ?
+`❌ ورودی قابل تشخیص نیست.
+
+نام رمز ارز را ارسال کنید.
+
+مثال:
+BTC
+BTCUSDT
+PEPE
+PEPEUSDT
+
+برای تغییر زبان:
+ /language`
+          :
+`❌ Input not recognized.
+
+Send a cryptocurrency symbol.
+
+Examples:
+BTC
+BTCUSDT
+PEPE
+PEPEUSDT
+
+To change language:
+ /language`
+    }
+  );
 }
 
 /* =========================================================
@@ -1712,10 +3401,18 @@ Multiple Timeframes`
 
 export default {
 
-  async fetch(request,env){
+  async fetch(
+    request,
+    env
+  ){
 
-    const url=new URL(request.url);
-    const path=url.pathname;
+    const url=
+      new URL(
+        request.url
+      );
+
+    const path=
+      url.pathname;
 
     try{
 
@@ -1725,16 +3422,45 @@ export default {
 
         return json({
           ok:true,
-          project:"Global Pulse",
-          version:VERSION,
-          telegram:!!env.TELEGRAM_BOT_TOKEN,
-          channel:!!env.TELEGRAM_CHANNEL_ID,
+          project:
+            "Global Pulse",
+          version:
+            VERSION,
+
+          telegram:
+            !!env.TELEGRAM_BOT_TOKEN,
+
+          channel:
+            !!env.TELEGRAM_CHANNEL_ID,
+
           bybit:true,
+
           cryptoAnalyzer:true,
-          automaticPublishing:true,
-          interactiveTelegramRadar:true,
-          languages:["fa","en"],
-          time:new Date().toISOString()
+
+          automaticPublishing:
+            true,
+
+          interactiveTelegramRadar:
+            true,
+
+          languages:[
+            "fa",
+            "en"
+          ],
+
+          iranNewsSources:
+            [
+              "IRNA",
+              "ISNA",
+              "Mehr",
+              "Tasnim"
+            ],
+
+          cryptoTimeframes:
+            TF_LIST,
+
+          time:
+            new Date().toISOString()
         });
       }
 
@@ -1746,7 +3472,9 @@ export default {
 
         try{
 
-          if(env.TELEGRAM_CHANNEL_ID){
+          if(
+            env.TELEGRAM_CHANNEL_ID
+          ){
 
             const r=
               await telegram(
@@ -1758,29 +3486,63 @@ export default {
                 }
               );
 
-            channel=!!r.ok;
+            channel=
+              !!r.ok;
           }
 
         }catch{}
 
         return json({
           ok:true,
-          project:"Global Pulse",
-          version:VERSION,
-          telegram:!!env.TELEGRAM_BOT_TOKEN,
+          project:
+            "Global Pulse",
+          version:
+            VERSION,
+
+          telegram:
+            !!env.TELEGRAM_BOT_TOKEN,
+
           channel,
+
           bybit:true,
+
           cryptoAnalyzer:true,
-          automaticPublishing:true,
-          interactiveTelegramRadar:true,
-          languages:["fa","en"],
-          time:new Date().toISOString()
+
+          automaticPublishing:
+            true,
+
+          interactiveTelegramRadar:
+            true,
+
+          languages:[
+            "fa",
+            "en"
+          ],
+
+          iranNewsOnly:
+            true,
+
+          iranNewsSources:
+            [
+              "IRNA",
+              "ISNA",
+              "Mehr",
+              "Tasnim"
+            ],
+
+          cryptoTimeframes:
+            TF_LIST,
+
+          time:
+            new Date().toISOString()
         });
       }
 
-      /* WEBHOOK */
+      /* SETUP WEBHOOK */
 
-      if(path==="/setup-webhook"){
+      if(
+        path==="/setup-webhook"
+      ){
 
         const webhook=
           `${url.origin}/telegram/webhook`;
@@ -1801,10 +3563,11 @@ export default {
         });
       }
 
-      /* WEBHOOK */
+      /* TELEGRAM WEBHOOK */
 
       if(
-        path==="/telegram/webhook" &&
+        path===
+          "/telegram/webhook" &&
         request.method==="POST"
       ){
 
@@ -1819,22 +3582,28 @@ export default {
         return json({
           ok:true,
           received:true,
-          update_id:update.update_id??null
+          update_id:
+            update.update_id??null
         });
       }
 
       /* LANGUAGE TEST */
 
-      if(path==="/test-language"){
+      if(
+        path==="/test-language"
+      ){
 
         const chatId=
-          url.searchParams.get("chat_id");
+          url.searchParams.get(
+            "chat_id"
+          );
 
         if(!chatId){
 
           return json({
             ok:false,
-            error:"chat_id is required"
+            error:
+              "chat_id is required"
           },400);
         }
 
@@ -1851,46 +3620,70 @@ export default {
 
       /* NEWS */
 
-      if(path==="/test-news"){
+      if(
+        path==="/test-news"
+      ){
 
         const items=
           await fetchGlobalNews();
 
         await sendTelegram(
           env,
-          newsMessage(items,"en")
+          newsMessage(
+            items,
+            "en"
+          )
         );
 
         return json({
           ok:true,
           type:"news",
-          count:items.length
+          count:
+            items.length
         });
       }
 
       /* IRAN NEWS */
 
-      if(path==="/test-iran"){
+      if(
+        path==="/test-iran"
+      ){
 
         const items=
           await fetchIranNews();
 
         await sendTelegram(
           env,
-          iranMessage(items,"fa")
+          iranMessage(
+            items,
+            "fa"
+          )
         );
 
         return json({
           ok:true,
           type:"iran-news",
-          count:items.length,
-          sources:IRAN_NEWS_FEEDS
+
+          count:
+            items.length,
+
+          iranOnly:true,
+
+          sources:
+            [
+              "IRNA",
+              "ISNA",
+              "Mehr",
+              "Tasnim"
+            ]
         });
       }
 
       /* TREND */
 
-      if(path==="/test-trend"){
+      if(
+        path==="/test-trend"
+      ){
 
         const data=
           await fetchCountryTrend(
@@ -1899,54 +3692,72 @@ export default {
 
         await sendTelegram(
           env,
-          trendMessage(data,"en")
+          trendMessage(
+            data,
+            "en"
+          )
         );
 
         return json({
           ok:true,
           type:"trend",
-          country:data.country,
-          count:data.trends.length
+          country:
+            data.country,
+          count:
+            data.trends.length
         });
       }
 
       /* SHOPPING */
 
-      if(path==="/test-shopping"){
+      if(
+        path==="/test-shopping"
+      ){
 
         const items=
           await fetchShopping();
 
         await sendTelegram(
           env,
-          shoppingMessage(items,"en")
+          shoppingMessage(
+            items,
+            "en"
+          )
         );
 
         return json({
           ok:true,
           type:"shopping",
-          count:items.length
+          count:
+            items.length
         });
       }
 
-      /* CRYPTO */
+      /* CRYPTO ANALYSIS */
 
-      if(path==="/analyze"){
+      if(
+        path==="/analyze"
+      ){
 
         const symbol=
           cleanSymbol(
-            url.searchParams.get("symbol")
+            url.searchParams.get(
+              "symbol"
+            )
           );
 
         const timeframe=
-          url.searchParams.get("timeframe")||
+          url.searchParams.get(
+            "timeframe"
+          )||
           "15";
 
         if(!symbol){
 
           return json({
             ok:false,
-            error:"symbol is required"
+            error:
+              "symbol is required"
           },400);
         }
 
@@ -1958,23 +3769,33 @@ export default {
 
         return json({
           ok:true,
-          version:VERSION,
+          version:
+            VERSION,
           data
         });
       }
 
       /* TELEGRAM CRYPTO TEST */
 
-      if(path==="/test-crypto"){
+      if(
+        path==="/test-crypto"
+      ){
+
+        const rawSymbol=
+          url.searchParams.get(
+            "symbol"
+          )||
+          "BTCUSDT";
 
         const symbol=
-          cleanSymbol(
-            url.searchParams.get("symbol")||
-            "BTCUSDT"
+          await resolveCryptoSymbol(
+            rawSymbol
           );
 
         const timeframe=
-          url.searchParams.get("timeframe")||
+          url.searchParams.get(
+            "timeframe"
+          )||
           "15";
 
         const data=
@@ -1985,7 +3806,10 @@ export default {
 
         await sendTelegram(
           env,
-          cryptoText(data,"en")
+          cryptoText(
+            data,
+            "en"
+          )
         );
 
         return json({
@@ -1998,25 +3822,41 @@ export default {
 
       /* FULL PUBLISH */
 
-      if(path==="/publish"){
+      if(
+        path==="/publish"
+      ){
 
-        await automaticPublish(env);
+        await automaticPublish(
+          env
+        );
 
         return json({
           ok:true,
+          version:
+            VERSION,
+
           published:{
             global:true,
             iran:true,
             trend:true,
             shopping:true
-          }
+          },
+
+          iranSourcesOnly:true,
+
+          languages:[
+            "en",
+            "fa"
+          ]
         });
       }
 
       return json({
         ok:false,
-        version:VERSION,
-        error:"Not Found",
+        version:
+          VERSION,
+        error:
+          "Not Found",
         path
       },404);
 
@@ -2024,16 +3864,25 @@ export default {
 
       return json({
         ok:false,
-        version:VERSION,
-        error:e.message||String(e)
+        version:
+          VERSION,
+        error:
+          e.message||
+          String(e)
       },500);
     }
   },
 
-  async scheduled(event,env,ctx){
+  async scheduled(
+    event,
+    env,
+    ctx
+  ){
 
     ctx.waitUntil(
-      automaticPublish(env)
+      automaticPublish(
+        env
+      )
     );
   }
 };
